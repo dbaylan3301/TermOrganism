@@ -71,3 +71,13 @@ Core capabilities:
 
 Active prototype.
 Core repair, memory, and shell integration are working.
+terminal
+zsh
+python
+ai
+groq
+shell
+cli
+automation
+developer-tools
+productivity
