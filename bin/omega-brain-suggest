@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import json, os
+from collections import Counter
+
+db = Path.home()/".termorganism/memory/commands.json"
+
+try:
+    data = json.loads(db.read_text(encoding="utf-8"))
+except Exception:
+    data = []
+
+cwd = os.getcwd()
+
+ctx = []
+if Path(cwd, "package.json").exists():
+    ctx.append("node")
+if Path(cwd, "requirements.txt").exists() or Path(cwd, "pyproject.toml").exists() or Path(cwd, "setup.py").exists():
+    ctx.append("python")
+if Path(cwd, "Cargo.toml").exists():
+    ctx.append("rust")
+
+pool = []
+for row in data:
+    row_ctx = row.get("ctx", [])
+    cmd = (row.get("cmd") or "").strip()
+    if not cmd:
+        continue
+    if ctx and any(x in row_ctx for x in ctx):
+        pool.append(cmd)
+
+if not pool:
+    raise SystemExit(0)
+
+counts = Counter(pool)
+best, count = counts.most_common(1)[0]
+
+# only suggest if repeated enough to be meaningful
+if count < 2:
+    raise SystemExit(0)
+
+print(best)

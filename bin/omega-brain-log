@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import json, os, sys, time
+
+db = Path.home()/".termorganism/memory/commands.json"
+
+try:
+    data = json.loads(db.read_text(encoding="utf-8"))
+except Exception:
+    data = []
+
+cmd = sys.argv[1].strip() if len(sys.argv) > 1 else ""
+cwd = os.getcwd()
+
+# ignore noise/debug/setup commands
+bad_prefixes = (
+    "source ",
+    "print ",
+    "type ",
+    "echo ",
+    "history",
+    "clear",
+    "pwd",
+    "cd ",
+    "ls",
+    "ll",
+    "lt",
+    "cat ",
+    "bat ",
+    "batcat ",
+    "rg ",
+    "fd ",
+    "fdfind ",
+    "nano ",
+    "vim ",
+    "python3 - <<",
+    "python - <<",
+    "omega-",
+    "precmd_functions",
+    "preexec_functions",
+    "typeset ",
+    "hash -r",
+)
+
+if not cmd or cmd.startswith(bad_prefixes):
+    raise SystemExit(0)
+
+ctx = []
+if Path(cwd, "package.json").exists():
+    ctx.append("node")
+if Path(cwd, "requirements.txt").exists() or Path(cwd, "pyproject.toml").exists() or Path(cwd, "setup.py").exists():
+    ctx.append("python")
+if Path(cwd, "Cargo.toml").exists():
+    ctx.append("rust")
+
+entry = {
+    "ts": int(time.time()),
+    "cwd": cwd,
+    "ctx": ctx,
+    "cmd": cmd[:500],
+}
+
+data.append(entry)
+data = data[-4000:]
+db.write_text(json.dumps(data, indent=2), encoding="utf-8")

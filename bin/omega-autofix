@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+python3 ~/.termorganism/core/autofix.py "$1"

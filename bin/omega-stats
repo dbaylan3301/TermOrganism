@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import json
+from collections import Counter
+
+db = Path.home()/".termorganism/memory/commands.json"
+
+try:
+    data = json.loads(db.read_text(encoding="utf-8"))
+except Exception:
+    data = []
+
+print("=== organism stats ===")
+print("events:", len(data))
+
+ctx_counter = Counter()
+cmd_counter = Counter()
+
+for row in data:
+    for c in row.get("ctx", []):
+        ctx_counter[c] += 1
+    cmd = (row.get("cmd") or "").strip()
+    if cmd:
+        cmd_counter[cmd] += 1
+
+print("\ncontexts:")
+for k, v in ctx_counter.most_common(10):
+    print(f"  {k}: {v}")
+
+print("\ntop commands:")
+for k, v in cmd_counter.most_common(10):
+    print(f"  {k}: {v}")

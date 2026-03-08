@@ -1,0 +1,16 @@
+=== local repair ===
+[organism] predicted failure
+[organism] local repair matched: missing-colon, indentation-after-colon
+[organism] confidence: high
+[organism] sandbox passed
+--- /tmp/termorganism_proof/broken_local.py
++++ /tmp/termorganism_proof/broken_local.py.fixed
+@@ -1,2 +1,2 @@
+-def x()
+-print("hi")
++def x():
++    print("hi")
+
+def x():
+    print("hi")
+

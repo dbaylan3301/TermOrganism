@@ -1,0 +1,41 @@
+=== organism stats ===
+events: 28
+
+contexts:
+  node: 10
+  python: 3
+
+top commands:
+  python pytTest.py: 2
+  python broken2.py: 2
+  z ma: 1
+  z pythonTest: 1
+  cd: 1
+  if [[ ! -d .venv ]]; then
+      msg="[organism] suggest: python3 -m venv .venv"
+    elif [[ -f pyproject.toml ]]; then
+      msg="[organism] suggest: pytest"
+    else
+      msg="[organism] suggest: python main.py"
+    fi: 1
+  msg="[organism] suggest: cargo run": 1
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+      msg="[organism] suggest: lazygit"
+    fi: 1
+  organism_suggest() {
+  local msg=""
+
+  if typeset -f organism_memory_suggest >/dev/null 2>&1; then
+    msg="$(organism_memory_suggest 2>/dev/null)"
+  fi
+
+  if [[ -z "$msg" ]]; then
+    msg="$(organism_project_suggest)"
+  fi
+
+  if [[ -n "$msg" && "$msg" != "$organism_last_suggest" ]]; then
+    print -r -- "$msg"
+    organism_last_suggest="$msg"
+  fi
+}: 1
+  unfunction organism_suggest organism_project_suggest organism_context 2>/dev/null: 1

@@ -1,0 +1,13 @@
+=== ai repair ===
+[organism] predicted failure
+[organism] consulting model
+[organism] AI repair success
+[organism] confidence: medium
+[organism] sandbox passed
+--- /tmp/termorganism_proof/broken_ai.py
++++ /tmp/termorganism_proof/broken_ai.py.fixed
+@@ -1 +1 @@
+-print(helo")
++print("helo")
+
+print("helo")
