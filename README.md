@@ -5,9 +5,7 @@
 ![stars](https://img.shields.io/github/stars/dbaylan3301/TermOrganism)
 
 Context-aware, self-healing terminal runtime with local + AI repair.
-One-Line => 
-git clone https://github.com/dbaylan3301/TermOrganism.git
-cd TermOrganism && bash install.sh
+
 
 **Context-aware, self-healing terminal runtime with local + AI repair.**
 
@@ -34,6 +32,12 @@ output:
 [organism] confidence: medium
 [organism] sandbox passed
 Hello, World
+
+---
+One-Line =>
+
+git clone https://github.com/dbaylan3301/TermOrganism.git
+cd TermOrganism && bash install.sh
 
 ## Philosophy
 
