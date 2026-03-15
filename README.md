@@ -4,8 +4,6 @@
 ![version](https://img.shields.io/github/v/tag/dbaylan3301/TermOrganism)
 ![stars](https://img.shields.io/github/stars/dbaylan3301/TermOrganism)
 
-Context-aware, self-healing terminal runtime with local + AI repair.
-
 
 **Context-aware, self-healing terminal runtime with local + AI repair.**
 
