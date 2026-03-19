@@ -1,4 +1,12 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path.cwd()
+TARGET = ROOT / "core" / "autofix.py"
+
+NEW_CONTENT = r'''from __future__ import annotations
 
 from typing import Any
 import ast
@@ -10,8 +18,6 @@ from core.engine.router import PolicyRouter
 from core.verify.sandbox import VerifierHub, run_in_sandbox
 from core.verify.python_verify import verify_python
 from core.memory import event_store, retrieval, stats
-from core.util.patch_apply import make_backup, apply_text_replacement, restore_backup
-from core.util.safe_exec import execute_safe_suggestions
 
 # expert references
 from core.experts.python_syntax import PythonSyntaxExpert
@@ -138,6 +144,7 @@ def _normalize_candidate(candidate):
             c["candidate_code"] = ""
         return c
 
+    # dataclass / object with attributes
     attrs = {}
     for name in (
         "expert_name",
@@ -170,6 +177,7 @@ def _normalize_candidate(candidate):
             "patch_safety_score": attrs.get("patch_safety_score", 0.0),
         }
 
+    # repr-style RepairCandidate(...)
     text = str(candidate)
     if "RepairCandidate(" in text:
         expert = _extract_field(text, "expert_name") or "python_syntax"
@@ -232,20 +240,7 @@ def _verify_candidate(candidate, context=None):
             "mode": "dependency_install",
         }
 
-    if kind == "runtime_file_missing":
-        if context and getattr(context, "file_path", "") and str(getattr(context, "file_path")).endswith(".py"):
-            if isinstance(code, str) and code.strip():
-                py = verify_python(code)
-                py["mode"] = kind
-                py["reason"] = f"operational fix with python payload validation: {py.get('reason', '')}"
-                return py
-        return {
-            "ok": True,
-            "reason": "operational file fix for non-python target; skipped python syntax verification",
-            "mode": kind,
-        }
-
-    if kind in {"shell_command", "shell_runtime"}:
+    if kind in {"runtime_file_missing", "shell_command", "shell_runtime"}:
         if isinstance(code, str) and code.strip():
             py = verify_python(code)
             py["mode"] = kind
@@ -263,87 +258,7 @@ def _verify_candidate(candidate, context=None):
     return {"ok": True, "reason": "no code payload"}
 
 
-def _apply_candidate(candidate, file_path: str | None):
-    c = _normalize_candidate(candidate)
-    if not file_path:
-        return {
-            "applied": False,
-            "reason": "no file_path provided",
-            "backup_path": None,
-        }
-
-    kind = c.get("kind", "") or ""
-    code = c.get("candidate_code", "") or ""
-
-    if kind not in {"syntax", "python_patch", "runtime_file_missing"}:
-        return {
-            "applied": False,
-            "reason": f"candidate kind not auto-applicable: {kind or 'unknown'}",
-            "backup_path": None,
-        }
-
-    if not isinstance(code, str) or not code.strip():
-        return {
-            "applied": False,
-            "reason": "candidate_code empty",
-            "backup_path": None,
-        }
-
-    target = file_path
-    backup = make_backup(target)
-    apply_text_replacement(target, code)
-
-    verify_result = verify_python(code)
-    if not verify_result.get("ok", False):
-        restore_backup(target, backup)
-        return {
-            "applied": False,
-            "reason": "post-apply verification failed; restored backup",
-            "backup_path": str(backup),
-            "verify": verify_result,
-        }
-
-    return {
-        "applied": True,
-        "reason": "patch applied and verified",
-        "backup_path": str(backup),
-        "verify": verify_result,
-    }
-
-
-def _execute_candidate(candidate, *, dry_run: bool = False, cwd: str | None = None):
-    c = _normalize_candidate(candidate)
-    kind = c.get("kind", "") or ""
-    metadata = c.get("metadata", {}) or {}
-    patch = c.get("patch", None)
-
-    if kind not in {"shell_command_missing", "shell_permission_denied", "shell_missing_path", "runtime_file_missing"}:
-        return {
-            "executed": False,
-            "reason": f"candidate kind not executable: {kind or 'unknown'}",
-            "results": [],
-        }
-
-    command_text = patch
-    if not command_text:
-        suggestions = metadata.get("suggestions", [])
-        if kind == "shell_command_missing":
-            command_text = " && ".join(suggestions[:3]) if suggestions else None
-        elif kind == "shell_permission_denied":
-            command_text = patch or " && ".join(suggestions[:2]) if suggestions else patch
-        elif kind == "shell_missing_path":
-            command_text = " && ".join([s for s in suggestions if s.startswith(("mkdir -p", "touch"))])
-
-    return execute_safe_suggestions(command_text, dry_run=dry_run, cwd=cwd)
-
-
-def _fallback_pipeline(
-    error_text: str,
-    file_path: str | None = None,
-    auto_apply: bool = False,
-    exec_suggestions: bool = False,
-    dry_run: bool = False,
-):
+def _fallback_pipeline(error_text: str, file_path: str | None = None):
     context = build_context(error_text=error_text, file_path=file_path)
     router = PolicyRouter()
     routes = router.route(context)
@@ -377,14 +292,6 @@ def _fallback_pipeline(
 
     verify_result = _verify_candidate(best, context=context)
     sandbox_result = run_in_sandbox(best, context)
-    apply_result = None
-    exec_result = None
-
-    if auto_apply and best is not None:
-        apply_result = _apply_candidate(best, file_path=file_path)
-
-    if exec_suggestions and best is not None:
-        exec_result = _execute_candidate(best, dry_run=dry_run)
 
     payload = {
         "error_text": error_text,
@@ -394,8 +301,6 @@ def _fallback_pipeline(
         "best": _normalize_candidate(best) if best is not None else None,
         "verify": verify_result,
         "sandbox": sandbox_result,
-        "apply": apply_result,
-        "exec": exec_result,
     }
 
     EventStoreAdapter().append_event(payload)
@@ -405,43 +310,21 @@ def _fallback_pipeline(
         "routes": routes,
         "verify": verify_result,
         "sandbox": sandbox_result,
-        "apply": apply_result,
-        "exec": exec_result,
     }
 
 
-def run_autofix(
-    error_text: str,
-    file_path: str | None = None,
-    auto_apply: bool = False,
-    exec_suggestions: bool = False,
-    dry_run: bool = False,
-):
+def run_autofix(error_text: str, file_path: str | None = None):
     context = build_context(error_text=error_text, file_path=file_path)
 
     try:
         orchestrator = _build_orchestrator()
         result = orchestrator.run(context)
     except Exception:
-        return _fallback_pipeline(
-            error_text=error_text,
-            file_path=file_path,
-            auto_apply=auto_apply,
-            exec_suggestions=exec_suggestions,
-            dry_run=dry_run,
-        )
+        return _fallback_pipeline(error_text=error_text, file_path=file_path)
 
     normalized_result = _normalize_candidate(result)
     verify_result = _verify_candidate(normalized_result, context=context)
     sandbox_result = run_in_sandbox(normalized_result, context)
-    apply_result = None
-    exec_result = None
-
-    if auto_apply:
-        apply_result = _apply_candidate(normalized_result, file_path=file_path)
-
-    if exec_suggestions:
-        exec_result = _execute_candidate(normalized_result, dry_run=dry_run)
 
     payload = {
         "error_text": error_text,
@@ -449,8 +332,6 @@ def run_autofix(
         "result": normalized_result,
         "verify": verify_result,
         "sandbox": sandbox_result,
-        "apply": apply_result,
-        "exec": exec_result,
     }
 
     try:
@@ -462,6 +343,20 @@ def run_autofix(
         "result": normalized_result,
         "verify": verify_result,
         "sandbox": sandbox_result,
-        "apply": apply_result,
-        "exec": exec_result,
     }
+'''
+
+
+def main() -> int:
+    backup = TARGET.with_suffix(".py.bak")
+    if TARGET.exists():
+        backup.write_text(TARGET.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+        print(f"[BACKUP] {backup}")
+
+    TARGET.write_text(NEW_CONTENT, encoding="utf-8")
+    print(f"[WRITE] {TARGET}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

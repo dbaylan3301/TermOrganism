@@ -1,4 +1,147 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+PATCHES = {
+    "core/util/safe_exec.py": '''from __future__ import annotations
+
+import shlex
+import subprocess
+from pathlib import Path
+from typing import Any
+
+
+ALLOWED_BASE_COMMANDS = {
+    "command",
+    "which",
+    "echo",
+    "mkdir",
+    "touch",
+    "chmod",
+}
+
+
+def _is_safe_tokens(tokens: list[str]) -> tuple[bool, str]:
+    if not tokens:
+        return False, "empty command"
+
+    base = tokens[0]
+
+    if base not in ALLOWED_BASE_COMMANDS:
+        return False, f"base command not allowed: {base}"
+
+    if base == "command":
+        if len(tokens) != 3 or tokens[1] != "-v":
+            return False, "only 'command -v <name>' allowed"
+        return True, "ok"
+
+    if base == "which":
+        if len(tokens) != 2:
+            return False, "only 'which <name>' allowed"
+        return True, "ok"
+
+    if base == "echo":
+        if tokens != ["echo", "$PATH"]:
+            return False, "only 'echo $PATH' allowed"
+        return True, "ok"
+
+    if base == "mkdir":
+        if len(tokens) < 3 or tokens[1] != "-p":
+            return False, "only 'mkdir -p <path>' allowed"
+        return True, "ok"
+
+    if base == "touch":
+        if len(tokens) != 2:
+            return False, "only 'touch <path>' allowed"
+        return True, "ok"
+
+    if base == "chmod":
+        if len(tokens) != 3 or tokens[1] != "+x":
+            return False, "only 'chmod +x <path>' allowed"
+        return True, "ok"
+
+    return False, "unhandled command"
+
+
+def _normalize_commands(command_text: str | None) -> list[str]:
+    if not command_text or not isinstance(command_text, str):
+        return []
+    parts = [p.strip() for p in command_text.split("&&")]
+    return [p for p in parts if p]
+
+
+def execute_safe_suggestions(
+    command_text: str | None,
+    *,
+    dry_run: bool = False,
+    cwd: str | Path | None = None,
+) -> dict[str, Any]:
+    commands = _normalize_commands(command_text)
+    results: list[dict[str, Any]] = []
+
+    if not commands:
+        return {
+            "executed": False,
+            "dry_run": dry_run,
+            "results": [],
+            "reason": "no commands to execute",
+        }
+
+    workdir = str(cwd) if cwd else None
+
+    for cmd in commands:
+        tokens = shlex.split(cmd)
+        ok, reason = _is_safe_tokens(tokens)
+
+        if not ok:
+            results.append({
+                "command": cmd,
+                "allowed": False,
+                "executed": False,
+                "reason": reason,
+            })
+            continue
+
+        if dry_run:
+            results.append({
+                "command": cmd,
+                "allowed": True,
+                "executed": False,
+                "reason": "dry-run",
+            })
+            continue
+
+        proc = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+        )
+        results.append({
+            "command": cmd,
+            "allowed": True,
+            "executed": True,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        })
+
+    executed_any = any(r.get("executed", False) for r in results)
+    all_allowed = all(r.get("allowed", False) for r in results) if results else False
+
+    return {
+        "executed": executed_any,
+        "dry_run": dry_run,
+        "all_allowed": all_allowed,
+        "results": results,
+    }
+''',
+
+    "core/autofix.py": r'''from __future__ import annotations
 
 from typing import Any
 import ast
@@ -232,20 +375,7 @@ def _verify_candidate(candidate, context=None):
             "mode": "dependency_install",
         }
 
-    if kind == "runtime_file_missing":
-        if context and getattr(context, "file_path", "") and str(getattr(context, "file_path")).endswith(".py"):
-            if isinstance(code, str) and code.strip():
-                py = verify_python(code)
-                py["mode"] = kind
-                py["reason"] = f"operational fix with python payload validation: {py.get('reason', '')}"
-                return py
-        return {
-            "ok": True,
-            "reason": "operational file fix for non-python target; skipped python syntax verification",
-            "mode": kind,
-        }
-
-    if kind in {"shell_command", "shell_runtime"}:
+    if kind in {"runtime_file_missing", "shell_command", "shell_runtime"}:
         if isinstance(code, str) and code.strip():
             py = verify_python(code)
             py["mode"] = kind
@@ -317,7 +447,7 @@ def _execute_candidate(candidate, *, dry_run: bool = False, cwd: str | None = No
     metadata = c.get("metadata", {}) or {}
     patch = c.get("patch", None)
 
-    if kind not in {"shell_command_missing", "shell_permission_denied", "shell_missing_path", "runtime_file_missing"}:
+    if kind not in {"shell_command_missing", "shell_permission_denied", "shell_missing_path"}:
         return {
             "executed": False,
             "reason": f"candidate kind not executable: {kind or 'unknown'}",
@@ -465,3 +595,208 @@ def run_autofix(
         "apply": apply_result,
         "exec": exec_result,
     }
+''',
+
+    "core/cli/autofix_cli.py": '''from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from core.autofix import run_autofix
+
+
+def detect_error_text(file_path: Path) -> str:
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".py":
+        proc = subprocess.run(
+            [sys.executable, str(file_path)],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip()
+        return ""
+
+    return file_path.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="termorganism-autofix",
+        description="Run TermOrganism autofix pipeline on a target file.",
+    )
+    parser.add_argument(
+        "target",
+        help="Target file path. Python file or a text file containing an error log.",
+    )
+    parser.add_argument(
+        "--error-text",
+        help="Explicit error text. If omitted, CLI will try to derive it from target.",
+        default=None,
+    )
+    parser.add_argument(
+        "--auto-apply",
+        action="store_true",
+        help="Apply eligible fixes to the target file after verification.",
+    )
+    parser.add_argument(
+        "--exec",
+        dest="exec_suggestions",
+        action="store_true",
+        help="Execute only whitelisted shell suggestions for executable shell candidates.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --exec, only show what would run without executing it.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print full JSON result.",
+    )
+    return parser
+
+
+def summarize(result: dict) -> str:
+    lines: list[str] = []
+
+    candidate = result.get("result") or {}
+    if not isinstance(candidate, dict):
+        candidate = {"raw": str(candidate)}
+
+    lines.append("TermOrganism Autofix Result")
+    lines.append("=" * 32)
+    lines.append(f"expert      : {candidate.get('expert', '-')}")
+    lines.append(f"kind        : {candidate.get('kind', '-')}")
+    lines.append(f"confidence  : {candidate.get('confidence', '-')}")
+    lines.append(f"summary     : {candidate.get('summary', '-')}")
+    lines.append(f"verify      : {result.get('verify', {}).get('ok', '-')}")
+    lines.append(f"verify_note : {result.get('verify', {}).get('reason', '-')}")
+    lines.append(f"sandbox     : {result.get('sandbox', {}).get('ok', '-')}")
+    lines.append(f"routes      : {', '.join(result.get('routes', [])) if result.get('routes') else '-'}")
+
+    apply_info = result.get("apply")
+    if isinstance(apply_info, dict):
+        lines.append(f"applied     : {apply_info.get('applied', False)}")
+        lines.append(f"apply_note  : {apply_info.get('reason', '-')}")
+        lines.append(f"backup_path : {apply_info.get('backup_path', '-')}")
+
+    exec_info = result.get("exec")
+    if isinstance(exec_info, dict):
+        lines.append(f"exec_done   : {exec_info.get('executed', False)}")
+        lines.append(f"exec_dryrun : {exec_info.get('dry_run', False)}")
+        lines.append(f"exec_all_ok : {exec_info.get('all_allowed', '-')}")
+
+    patch = candidate.get("patch")
+    if isinstance(patch, str) and patch.strip():
+        lines.append("")
+        lines.append("patch:")
+        lines.append(patch)
+
+    metadata = candidate.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("suggestions"):
+        lines.append("")
+        lines.append("suggestions:")
+        for s in metadata["suggestions"]:
+            lines.append(f"  - {s}")
+
+    return "\\n".join(lines)
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    target = Path(args.target)
+    if not target.exists():
+        print(f"HATA: hedef dosya bulunamadı: {target}", file=sys.stderr)
+        return 2
+
+    error_text = args.error_text
+    if not error_text:
+        error_text = detect_error_text(target)
+
+    if not error_text:
+        if args.json:
+            print(json.dumps({
+                "ok": True,
+                "message": "No error detected. Target appears healthy.",
+                "target": str(target),
+                "changed": False,
+            }, ensure_ascii=False, indent=2))
+        else:
+            print("Hata tespit edilmedi. Dosya zaten düzeltilmiş veya çalışır durumda.")
+        return 0
+
+    result = run_autofix(
+        error_text=error_text,
+        file_path=str(target),
+        auto_apply=args.auto_apply,
+        exec_suggestions=args.exec_suggestions,
+        dry_run=args.dry_run,
+    )
+
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(summarize(result))
+
+    verify_ok = bool((result.get("verify") or {}).get("ok", False))
+    return 0 if verify_ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+''',
+
+    "test_safe_exec.py": '''#!/usr/bin/env python3
+from core.util.safe_exec import execute_safe_suggestions
+
+cases = [
+    ("mkdir -p demo_exec && touch demo_exec/sample.txt", True),
+    ("chmod +x demo_exec/sample.txt", True),
+    ("echo $PATH", True),
+    ("sudo apt install bat", False),
+    ("rm -rf demo_exec", False),
+]
+
+for cmd, should_be_allowed in cases:
+    out = execute_safe_suggestions(cmd, dry_run=True)
+    print("=" * 72)
+    print(cmd)
+    print(out)
+''',
+}
+
+
+def backup_and_write(rel_path: str, content: str) -> None:
+    path = ROOT / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(
+            path.read_text(encoding="utf-8", errors="replace"),
+            encoding="utf-8",
+        )
+        print(f"[BACKUP] {rel_path} -> {backup.relative_to(ROOT)}")
+
+    path.write_text(content, encoding="utf-8")
+    print(f"[WRITE]  {rel_path}")
+
+
+def main() -> int:
+    for rel_path, content in PATCHES.items():
+        backup_and_write(rel_path, content)
+
+    print("\\nDone.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

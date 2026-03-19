@@ -1,0 +1,1 @@
+bash: mycustomtool: command not found
