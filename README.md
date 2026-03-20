@@ -17,20 +17,23 @@ It localizes the fault, proposes a repair, executes that repair in an isolated w
 ## Demo recordings
 
 ### Runtime autofix
+[![asciicast](https://asciinema.org/a/isHkYQFzEU3TUvyQ.svg)](https://asciinema.org/a/isHkYQFzEU3TUvyQ)
 
-[![asciicast](https://asciinema.org/a/isHkYQFzEU3TUvyQ.svg)]
+[▶ Open runtime demo](https://asciinema.org/a/isHkYQFzEU3TUvyQ)
 
 Shows a runtime file-missing failure being repaired and verified.
 
 ### Cross-file semantic repair
+[![asciicast](https://asciinema.org/a/4UOQ2vi8F8RS3l8P.svg)](https://asciinema.org/a/4UOQ2vi8F8RS3l8P)
 
-[![asciicast](https://asciinema.org/a/4UOQ2vi8F8RS3l8P.svg)]
+[▶ Open cross-file demo](https://asciinema.org/a/4UOQ2vi8F8RS3l8P)
 
 Shows provider/caller-aware repair under `--force-semantic`.
 
 ### Benchmark run
+[![asciicast](https://asciinema.org/a/MqQzVRHnYmMnQWRo.svg)](https://asciinema.org/a/MqQzVRHnYmMnQWRo)
 
-[![asciicast](https://asciinema.org/a/MqQzVRHnYmMnQWRo.svg)]
+[▶ Open benchmark demo](https://asciinema.org/a/MqQzVRHnYmMnQWRo)
 
 Shows the benchmark harness running on the bundled fixture suite.
 
