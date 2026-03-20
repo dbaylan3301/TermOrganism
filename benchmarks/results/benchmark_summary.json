@@ -1,43 +1,43 @@
 {
-  "total_cases": 4,
-  "passed_cases": 4,
+  "total_cases": 20,
+  "passed_cases": 20,
   "failed_cases": 0,
   "success_rate": 1.0,
-  "median_fix_time_ms": 10154.212,
-  "mean_fix_time_ms": 12478.536,
+  "median_fix_time_ms": 10559.483,
+  "mean_fix_time_ms": 13893.137,
   "false_positive_rate": 0.0,
   "category_stats": {
     "cross_file": {
-      "total": 1,
-      "passed": 1,
+      "total": 5,
+      "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 21690.477,
-      "mean_fix_time_ms": 21690.477
+      "median_fix_time_ms": 24810.794,
+      "mean_fix_time_ms": 25048.189
     },
     "dependency": {
-      "total": 1,
-      "passed": 1,
+      "total": 5,
+      "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 7915.244,
-      "mean_fix_time_ms": 7915.244
+      "median_fix_time_ms": 9474.491,
+      "mean_fix_time_ms": 9561.803
     },
     "runtime": {
-      "total": 1,
-      "passed": 1,
+      "total": 5,
+      "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 12032.041,
-      "mean_fix_time_ms": 12032.041
+      "median_fix_time_ms": 12154.092,
+      "mean_fix_time_ms": 11801.636
     },
     "shell": {
-      "total": 1,
-      "passed": 1,
+      "total": 5,
+      "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 8276.383,
-      "mean_fix_time_ms": 8276.383
+      "median_fix_time_ms": 9206.183,
+      "mean_fix_time_ms": 9160.918
     }
   },
   "generated_files": {
