@@ -14,6 +14,26 @@ It localizes the fault, proposes a repair, executes that repair in an isolated w
 
 ---
 
+## Demo recordings
+
+### Runtime autofix
+
+[![asciicast](https://asciinema.org/a/isHkYQFzEU3TUvyQ.svg)]
+
+Shows a runtime file-missing failure being repaired and verified.
+
+### Cross-file semantic repair
+
+[![asciicast](https://asciinema.org/a/4UOQ2vi8F8RS3l8P.svg)]
+
+Shows provider/caller-aware repair under `--force-semantic`.
+
+### Benchmark run
+
+[![asciicast](https://asciinema.org/a/MqQzVRHnYmMnQWRo.svg)]
+
+Shows the benchmark harness running on the bundled fixture suite.
+
 ## Why this matters
 
 Most terminal tooling can *suggest*.
