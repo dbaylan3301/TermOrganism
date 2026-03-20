@@ -1,48 +1,12 @@
 
 # TermOrganism
 
-<<<<<<< HEAD
-**Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and measurable benchmark performance.**
-||||||| 6900d9a
-**Context-aware, MoE-style self-healing repair runtime for terminal and Python workflows.**
-=======
 ![Benchmark](https://img.shields.io/badge/benchmark-20%2F20%20passed-brightgreen)
 ![Success Rate](https://img.shields.io/badge/success_rate-100%25-brightgreen)
 ![False Positives](https://img.shields.io/badge/false_positives-0.0-success)
 ![Cross-File](https://img.shields.io/badge/cross--file-repair-blue)
 ![Sandbox Verified](https://img.shields.io/badge/sandbox-verified-purple)
->>>>>>> origin/main
 
-<<<<<<< HEAD
-TermOrganism turns a shell from a passive command runner into an adaptive repair-capable runtime.  
-It localizes failures, proposes repairs, verifies them in an isolated workspace, and surfaces the highest-confidence fix.
-||||||| 6900d9a
-TermOrganism is a repair orchestrator that transforms failures into structured repair loops:
-
-```text
-error -> context -> route -> expert -> candidate -> verify -> apply/exec -> memory
-```
-
-Instead of using one generic fixer, it routes each failure to the most relevant repair expert and produces typed, verifiable remediation candidates.
-
----
-
-## Overview
-
-TermOrganism is designed as a **Mixture-of-Experts (MoE) repair runtime** for terminal and Python workflows.
-
-It can currently:
-
-- detect and route Python syntax failures
-- generate structured repair candidates
-- verify Python repair payloads
-- auto-apply eligible file-based fixes with backup + re-verification
-- suggest dependency installation candidates
-- repair runtime file/path failures
-- diagnose shell failures such as `command not found` and `permission denied`
-- safely dry-run or execute whitelisted shell remediations
-- persist repair events into JSONL memory
-=======
 **Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and benchmark-backed proof.**
 
 TermOrganism does not stop at suggesting a fix.  
@@ -88,47 +52,18 @@ That difference matters because a repair is only trustworthy if it can be:
 - emitted in machine-readable form
 
 This repo is about **verification-first repair**, not just autocomplete for terminal mistakes.
->>>>>>> origin/main
 
 ---
 
 ## Proof at a glance
 
-<<<<<<< HEAD
-Most terminal repair tools can suggest patches. Far fewer can:
-||||||| 6900d9a
-Most terminal workflows still look like this:
-=======
 **Latest benchmark:** 20 / 20 passed
->>>>>>> origin/main
 
-<<<<<<< HEAD
-- repair across files
-- verify candidate behavior in a sandbox
-- preserve a zero-false-positive profile on a structured benchmark
-- expose the full repair trail as machine-readable output
-||||||| 6900d9a
-```text
-run -> fail -> manual fix
-```
-=======
 - **Success rate:** 100%
 - **False positive rate:** 0.0
 - **Median fix time:** 9518.961 ms
 - **Mean fix time:** 12920.998 ms
->>>>>>> origin/main
 
-<<<<<<< HEAD
-TermOrganism is built around that gap.
-||||||| 6900d9a
-TermOrganism aims to move them toward:
-
-```text
-run -> classify -> repair -> verify -> learn
-```
-
-The goal is to turn failures into repair opportunities rather than passive logs.
-=======
 ### Category breakdown
 
 | Category | Passed / Total | Success rate | Median time (ms) | Mean time (ms) |
@@ -146,510 +81,17 @@ The goal is to turn failures into repair opportunities rather than passive logs.
 - cross-file provider-side semantic repair
 - sandbox-verified candidate evaluation
 - zero false positives on the current 20-case suite
->>>>>>> origin/main
 
 ---
 
-<<<<<<< HEAD
-## Benchmark snapshot
-||||||| 6900d9a
-## Current capabilities
-=======
 ## Demo in under a minute
->>>>>>> origin/main
 
-<<<<<<< HEAD
-**Latest verified benchmark run:** 20 / 20 passed
-
-- **Success rate:** 100%
-- **False positive rate:** 0.0
-- **Median fix time:** 9518.961 ms
-- **Mean fix time:** 12920.998 ms
-
-### Category breakdown
-
-| Category | Passed / Total | Success rate | Median time (ms) | Mean time (ms) |
-|---|---:|---:|---:|---:|
-| Runtime | 5 / 5 | 100% | 10245.425 | 10408.827 |
-| Dependency | 5 / 5 | 100% | 8363.089 | 8352.092 |
-| Shell | 5 / 5 | 100% | 7763.174 | 7860.569 |
-| Cross-file | 5 / 5 | 100% | 25609.321 | 25062.505 |
-
-### What this benchmark demonstrates
-
-- recovery from runtime file-missing failures
-- dependency failure classification and repair routing
-- shell command failure detection and repair selection
-- provider-side repair in cross-file semantic flows
-- sandbox-verified repair evaluation
-- zero false positives on the current 20-case suite
-
-### Reproduce the benchmark
-||||||| 6900d9a
-### Python syntax repair
-
-TermOrganism can detect Python syntax failures, generate a structured repair candidate, verify the patched code using AST parsing, and optionally apply the fix to disk with backup.
-
-### Dependency repair suggestions
-
-For missing imports such as `ModuleNotFoundError`, it extracts the missing package and emits a dependency-install candidate.
-
-Example:
-=======
 ### 1) Runtime file-missing repair
->>>>>>> origin/main
 
 ```bash
-<<<<<<< HEAD
-python3 -u benchmarks/runner.py
-||||||| 6900d9a
-pip install definitely_missing_package_12345
-=======
 python3 -u termorganism repair demo/broken_runtime.py --json
->>>>>>> origin/main
 ```
 
-<<<<<<< HEAD
-Generated artifacts:
-
-- `benchmarks/results/case_results.json`
-- `benchmarks/results/benchmark_summary.json`
-- `benchmarks/reports/benchmark_report.md`
-
----
-
-## Core capabilities
-
-- **Execution-aware repair routing**
-- **Runtime, dependency, shell, and cross-file repair coverage**
-- **Sandbox-verified candidate evaluation**
-- **Planner-first repair selection**
-- **Force-semantic mode for deeper multi-file analysis**
-- **Structured JSON output for automation and benchmarking**
-- **Memory-guided ranking hooks**
-- **Contract and behavioral verification hooks**
-
----
-
-## Example commands
-
-### Doctor
-
-```bash
-termorganism doctor
-```
-
-### Repair a failing Python file
-
-```bash
-termorganism repair demo/broken_runtime.py --json
-```
-
-### Force semantic repair on a cross-file case
-
-```bash
-termorganism repair demo/cross_file_dep.py --force-semantic --json
-```
-
----
-
-## Why it matters
-
-TermOrganism is not just a command suggester. It is a **verification-first repair runtime**.
-
-That distinction matters because a repair is only valuable if it can be:
-
-1. localized to the right file or provider
-2. executed in an isolated workspace
-3. checked against expected behavior
-4. ranked against competing repair plans
-5. surfaced in a reproducible form
-
-This repository is organized around those constraints.
-
----
-
-## Output model
-
-TermOrganism can emit structured JSON that includes fields such as:
-
-- selected repair kind
-- target file
-- provider / caller metadata
-- source plan
-- branch execution result
-- contract result
-- behavioral verification result
-- sandbox result
-||||||| 6900d9a
-### Runtime file/path repair
-
-For file-related runtime failures, it can emit operational remediations such as:
-
-```bash
-mkdir -p logs && touch logs/app.log
-```
-
-When the failing target is a Python file, it can also generate a guarded rewrite using `Path(...).exists()`.
-
-### Shell/runtime diagnostics
-
-It can classify shell failures such as:
-
-- `command not found`
-- `permission denied`
-- missing shell path/file failures
-
-and produce structured shell candidates with suggestions.
-
-### Safe execution
-
-Shell remediations are separated from patch apply logic and routed through a **whitelisted execution layer**.
-
-### Repair memory
-
-Repair traces are written to:
-
-```text
-memory/TermOrganism/repair_events.jsonl
-```
-
-This creates an audit trail and prepares the system for future retrieval-augmented repair logic.
-
----
-
-## Architecture
-
-```text
-TermOrganism/
-├── core/
-│   ├── __init__.py
-│   ├── autofix.py
-│   ├── cli/
-│   │   ├── __init__.py
-│   │   └── autofix_cli.py
-│   ├── engine/
-│   │   ├── __init__.py
-│   │   ├── context_builder.py
-│   │   ├── orchestrator.py
-│   │   ├── ranker.py
-│   │   └── router.py
-│   ├── experts/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── dependency.py
-│   │   ├── file_runtime.py
-│   │   ├── llm_fallback.py
-│   │   ├── memory_retrieval.py
-│   │   ├── python_syntax.py
-│   │   └── shell_runtime.py
-│   ├── memory/
-│   │   ├── __init__.py
-│   │   ├── event_store.py
-│   │   ├── retrieval.py
-│   │   └── stats.py
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── schemas.py
-│   ├── util/
-│   │   ├── __init__.py
-│   │   ├── diffing.py
-│   │   ├── fingerprints.py
-│   │   ├── logging.py
-│   │   ├── patch_apply.py
-│   │   └── safe_exec.py
-│   └── verify/
-│       ├── __init__.py
-│       ├── python_verify.py
-│       └── sandbox.py
-└── memory/
-    └── TermOrganism/
-        └── repair_events.jsonl
-```
-
----
-
-## How it works
-
-### 1. Context building
-
-Raw failures are normalized into a structured `RepairContext`.
-
-Typical fields include:
-
-- `error_text`
-- `file_path`
-- `source_code`
-- `filename`
-- `error_type`
-
-### 2. Routing
-
-The policy router maps an error signature to one or more experts.
-
-Typical mappings:
-
-- `SyntaxError`, `IndentationError` -> `python_syntax`
-- `ModuleNotFoundError` -> `dependency`
-- `FileNotFoundError` -> `file_runtime`
-- `command not found`, `permission denied` -> `shell_runtime`
-
-### 3. Candidate generation
-
-Experts emit structured candidates.
-
-Example candidate:
-
-```json
-{
-  "expert": "python_syntax",
-  "kind": "syntax",
-  "confidence": 0.85,
-  "summary": "missing block colons restored",
-  "patch": "... unified diff ...",
-  "candidate_code": "... patched source ..."
-}
-```
-
-### 4. Verification
-
-Candidates are verified according to type.
-
-- Python patch -> AST validation
-- dependency install -> accepted as non-Python operational candidate
-- runtime file fix -> operational validation or Python validation depending on target type
-- shell candidate -> safe execution layer only
-
-### 5. Apply / exec
-
-Depending on candidate type:
-
-- file-based Python fixes can be auto-applied with backup
-- shell suggestions can be executed only through a whitelist-based safe executor
-- dangerous commands are intentionally blocked
-
-### 6. Memory logging
-
-Every repair attempt is appended to JSONL memory for auditability and future retrieval.
-
----
-
-## Expert routing table
-
-| Failure class | Routed expert |
-|---|---|
-| `SyntaxError`, `IndentationError` | `python_syntax` |
-| `ModuleNotFoundError`, missing import | `dependency` |
-| `FileNotFoundError`, missing runtime file | `file_runtime` |
-| `command not found`, `permission denied` | `shell_runtime` |
-| uncategorized / weak match | `memory_retrieval`, `llm_fallback` |
-
----
-
-## CLI usage
-
-### Analyze a broken Python file
-
-```bash
-./termorganism demo/broken_syntax.py
-```
-
-### Analyze and auto-apply a safe Python fix
-
-```bash
-./termorganism demo/broken_syntax.py --auto-apply
-```
-
-### Analyze a dependency failure as JSON
-
-```bash
-./termorganism demo/broken_import.py --json
-```
-
-### Analyze a shell error log
-
-```bash
-./termorganism demo/broken_shell_bat.txt --json
-```
-
-### Dry-run safe shell remediations
-
-```bash
-./termorganism demo/broken_shell_path.txt --exec --dry-run --json
-```
-
----
-
-## Example outputs
-
-### Example 1 — Python syntax repair
-
-Input:
-
-```python
-def add(a, b)
-    return a + b
-```
-
-Output candidate:
-
-```json
-{
-  "expert": "python_syntax",
-  "kind": "syntax",
-  "confidence": 0.85,
-  "summary": "missing block colons restored",
-  "candidate_code": "def add(a, b):\n    return a + b\n"
-}
-```
-
-Expected behavior:
-
-- route -> `python_syntax`
-- generate patched source
-- verify using AST
-- optionally auto-apply with backup
-- persist event to memory
-
----
-
-### Example 2 — Dependency repair
-
-Input error:
-
-```text
-ModuleNotFoundError: No module named 'definitely_missing_package_12345'
-```
-
-Output candidate:
-
-```json
-{
-  "expert": "dependency",
-  "kind": "dependency_install",
-  "patch": "pip install definitely_missing_package_12345"
-}
-```
-
----
-
-### Example 3 — Runtime file repair
-
-Input error:
-
-```text
-FileNotFoundError: [Errno 2] No such file or directory: 'logs/app.log'
-```
-
-Output candidate:
-
-```json
-{
-  "expert": "file_runtime",
-  "kind": "runtime_file_missing",
-  "patch": "mkdir -p logs && touch logs/app.log"
-}
-```
-
----
-
-### Example 4 — Shell command repair
-
-Input error:
-
-```text
-zsh: command not found: bat
-```
-
-Output candidate includes:
-
-- missing command extraction
-- package hint
-- safe suggestions
-- structured metadata
-
-Example:
-
-```json
-{
-  "expert": "shell_runtime",
-  "kind": "shell_command_missing",
-  "metadata": {
-    "missing_command": "bat",
-    "package_hint": "bat",
-    "suggestions": [
-      "command -v bat",
-      "which bat",
-      "echo $PATH",
-      "sudo apt install bat",
-      "pkg install bat",
-      "brew install bat"
-    ]
-  }
-}
-```
-
----
-
-## Safety model
-
-> **Important**
->
-> TermOrganism explicitly separates **apply** from **exec**.
-
-### Auto-apply
-
-Used only for eligible file-based repair candidates.
-
-Current supported classes:
-
-- `syntax`
-- `python_patch`
-- `runtime_file_missing` when a valid Python rewrite exists
-
-### Safe exec
-
-Used only with explicit `--exec`, and only for whitelisted commands.
-
-Currently allowed:
-
-- `command -v ...`
-- `which ...`
-- `echo $PATH`
-- `mkdir -p ...`
-- `touch ...`
-- `chmod +x ...`
-
-Blocked by design:
-
-- `sudo ...`
-- `rm ...`
-- `mv ...`
-- `curl ...`
-- `wget ...`
-- unrestricted shell execution
-
----
-
-## Event memory
-
-Repair traces are stored in:
-
-```text
-memory/TermOrganism/repair_events.jsonl
-```
-
-A typical event may include:
-
-- original error text
-- selected routes
-- generated candidates
-- best candidate
-- verify result
-- sandbox result
-- apply result
-- exec result
-=======
 Expected shape of result:
 
 ```json
@@ -682,18 +124,7 @@ What this demonstrates:
 - provider-side repair targeting
 - multi-file semantic localization
 - verified branch execution before trust
->>>>>>> origin/main
 
-<<<<<<< HEAD
-That makes it usable both as a CLI tool and as a benchmarking substrate.
-||||||| 6900d9a
-This memory layer is the foundation for future:
-
-- retrieval-augmented repair
-- confidence reweighting
-- repeated failure adaptation
-- project-aware remediation ranking
-=======
 ### 3) Full benchmark reproduction
 
 ```bash
@@ -705,43 +136,13 @@ Artifacts generated by the benchmark runner:
 - `benchmarks/results/case_results.json`
 - `benchmarks/results/benchmark_summary.json`
 - `benchmarks/reports/benchmark_report.md`
->>>>>>> origin/main
 
 ---
 
-## Current benchmark-backed positioning
+## Quick start
 
-<<<<<<< HEAD
-TermOrganism currently demonstrates:
-||||||| 6900d9a
-### 1. Analyze a broken file
-=======
 ### Repo-local run
->>>>>>> origin/main
 
-<<<<<<< HEAD
-- **sandbox-verified repair**
-- **cross-file-aware repair selection**
-- **planner-based repair ranking**
-- **machine-readable verification output**
-- **zero false positives on the current benchmark suite**
-||||||| 6900d9a
-```bash
-./termorganism demo/broken_syntax.py
-```
-
-### 2. Auto-apply a verified syntax repair
-
-```bash
-./termorganism demo/broken_syntax.py --auto-apply
-```
-
-### 3. Dry-run shell remediation
-
-```bash
-./termorganism demo/broken_shell_path.txt --exec --dry-run --json
-```
-=======
 ```bash
 git clone https://github.com/dbaylan3301/TermOrganism.git
 cd TermOrganism
@@ -810,45 +211,13 @@ python3 -u termorganism repair demo/broken_shell_bat.txt --json
 ```bash
 python3 -u termorganism repair demo/cross_file_dep.py --force-semantic --json
 ```
->>>>>>> origin/main
 
 ---
 
-<<<<<<< HEAD
-## Repository focus
-||||||| 6900d9a
-## Current status
-=======
 ## Machine-readable output
->>>>>>> origin/main
 
-<<<<<<< HEAD
-This repo currently emphasizes:
-||||||| 6900d9a
-TermOrganism is currently in an **operational prototype** phase.
-=======
 TermOrganism can emit structured JSON with fields such as:
->>>>>>> origin/main
 
-<<<<<<< HEAD
-- Python-centered repair flows
-- shell/runtime/dependency failure handling
-- cross-file semantic provider repair
-- benchmarkability and reproducibility
-||||||| 6900d9a
-It already supports:
-
-- MoE-style routing
-- structured expert outputs
-- candidate normalization
-- typed verification
-- auto-apply with backup + re-verification
-- safe shell execution with dry-run
-- persistent repair event logging
-- CLI-driven workflows
-
-It is not yet a full production runtime, but it is already a working self-healing repair prototype.
-=======
 - selected repair kind
 - target file
 - provider / caller metadata
@@ -1019,7 +388,6 @@ At a high level, the system contains several layers.
 - and canonical winner selection
 
 ### Verification Layer
->>>>>>> origin/main
 
 - static validation
 - isolated runtime replay
@@ -1027,79 +395,17 @@ At a high level, the system contains several layers.
 - synthesized regression guards
 - and contract propagation
 
-<<<<<<< HEAD
-## Suggested mental model
-||||||| 6900d9a
-## Roadmap
-=======
 ### Memory and Ranking Layer
->>>>>>> origin/main
 
-<<<<<<< HEAD
-Think of TermOrganism as:
-||||||| 6900d9a
-### Near-term
-=======
 - historical priors
 - winner-only success propagation
 - semantic strategy weighting
 - and blast radius and risk balancing
->>>>>>> origin/main
 
-<<<<<<< HEAD
-> a self-healing terminal runtime that does not stop at proposing fixes, but attempts to validate them before trusting them.
-
----
-
-## Roadmap direction
-
-Near-term leverage points:
-||||||| 6900d9a
-- real sandbox verification
-- stronger shell/runtime remediation
-- environment-aware dependency validation
-- better retrieval-based ranking
-- richer diff safety scoring
-
-### Mid-term
-
-- native production orchestrator components
-- project-aware patch ranking
-- patch policies by error class
-- confidence calibration
-
-### Longer-term
-
-- continuous terminal observation
-- retrieval from prior successful local repairs
-- command learning
-- policy-controlled LLM fallback
-
----
-
-## Development note
-
-At this stage, the strongest validated repair loop is:
-=======
 ## Flagship behavior
 
 A representative TermOrganism workflow now supports this pattern:
->>>>>>> origin/main
 
-<<<<<<< HEAD
-- expand benchmark coverage from 20 cases to larger public suites
-- reduce cross-file latency
-- harden sandbox isolation and execution speed
-- improve logical-error and regression-guard coverage
-- polish doctor and force-semantic UX
-- produce reproducible demo flows and public benchmark comparisons
-||||||| 6900d9a
-```text
-error -> route -> expert -> structured candidate -> verify -> apply/exec -> memory
-```
-
-That loop is already working end-to-end across multiple repair classes.
-=======
 ```text
 healthy target
 -> force semantic analysis
@@ -1111,42 +417,15 @@ healthy target
 ```
 
 This is a major step beyond simple autofix systems that only react after a failure has already crashed visibly.
->>>>>>> origin/main
 
 ## Example use cases
 
-<<<<<<< HEAD
-## Status
-||||||| 6900d9a
-## Demo
-=======
 TermOrganism can repair a broken Python file, analyze a shell or runtime failure, run semantic analysis even if the target currently passes, and evaluate execution suggestions without actually running them.
->>>>>>> origin/main
 
-<<<<<<< HEAD
-TermOrganism is no longer just an experimental terminal fixer.  
-It now has a green multi-category benchmark with measurable repair behavior and reproducible outputs.
-||||||| 6900d9a
-Create a broken Python file:
-=======
 ## Example output themes
->>>>>>> origin/main
 
-<<<<<<< HEAD
-If you are interested in terminal-native repair systems, semantic debugging, cross-file fault localization, or verification-first developer tooling, this is the layer to watch.
-||||||| 6900d9a
-```python
-def mul(a, b)
-    return a * b
-```
-=======
 Depending on the failure class, TermOrganism can return structured information such as selected expert, semantic localization summary, competing candidates, chosen plan, sandbox result, behavioral verification result, regression guard result, contract propagation result, semantic rank tuple, and target provider and caller files.
->>>>>>> origin/main
 
-<<<<<<< HEAD
-||||||| 6900d9a
-Then run:
-=======
 This is useful both for direct automated flows and for human-in-the-loop debugging.
 
 ## Design philosophy
@@ -1194,86 +473,22 @@ The repository is centered around core orchestration, expert proposals, sandbox 
 ## Installation
 
 Clone the repository:
->>>>>>> origin/main
 
-<<<<<<< HEAD
-## Demo recordings
-||||||| 6900d9a
-```bash
-./termorganism demo/broken_syntax.py --auto-apply
-```
-=======
 ```bash
 git clone https://github.com/dbaylan3301/TermOrganism.git
 cd TermOrganism
 ```
->>>>>>> origin/main
 
-<<<<<<< HEAD
-### Runtime autofix
-||||||| 6900d9a
-Expected result:
-=======
 ## Running
->>>>>>> origin/main
 
-<<<<<<< HEAD
-[![asciicast](https://asciinema.org/a/REPLACE_RUNTIME_CAST_ID.svg)](https://asciinema.org/a/REPLACE_RUNTIME_CAST_ID)
-||||||| 6900d9a
-- `python_syntax` selected
-- patch generated
-- AST verification passes
-- backup created
-- file rewritten
-- repair event stored in memory
-=======
 General pattern:
->>>>>>> origin/main
 
-<<<<<<< HEAD
-Shows a runtime file-missing failure being repaired and verified.
-
-### Cross-file semantic repair
-
-[![asciicast](https://asciinema.org/a/REPLACE_CROSSFILE_CAST_ID.svg)](https://asciinema.org/a/REPLACE_CROSSFILE_CAST_ID)
-
-Shows provider/caller-aware repair under `--force-semantic`.
-
-### Benchmark run
-||||||| 6900d9a
----
-
-## Philosophy
-
-TermOrganism treats failure as a first-class runtime signal.
-
-Instead of:
-
-```text
-run -> fail -> inspect manually
-```
-=======
 ```bash
 ./termorganism <target> [options]
 ```
->>>>>>> origin/main
 
-<<<<<<< HEAD
-[![asciicast](https://asciinema.org/a/REPLACE_BENCHMARK_CAST_ID.svg)](https://asciinema.org/a/REPLACE_BENCHMARK_CAST_ID)
-
-Shows the benchmark harness running on the bundled fixture suite.
-||||||| 6900d9a
-it moves toward:
-=======
 ## Who this is for
->>>>>>> origin/main
 
-<<<<<<< HEAD
-||||||| 6900d9a
-```text
-run -> classify -> repair -> verify -> remember
-```
-=======
 TermOrganism is for developers who want more than linter-style feedback, more than one-shot patch suggestions, a terminal-native repair workflow, verifiable semantic repair plans, and cross-file reasoning about broken behavior.
 
 It is especially relevant if you care about program behavior, fault boundaries, and repair credibility rather than just error suppression.
@@ -1297,4 +512,3 @@ TermOrganism is already capable of verified cross-file semantic repair planning 
 ## License
 
 MIT
->>>>>>> origin/main
