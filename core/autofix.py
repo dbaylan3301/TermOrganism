@@ -12,6 +12,110 @@ from core.causal.analyzer import analyze_failure_causes
 from core.planner.repair_planner import build_repair_plans
 from core.planner.multi_file_planner import expand_multifile_plan_family
 from core.planner.branch_executor import execute_repair_plan
+
+
+import sys
+def _force_plan_target_to_file(plan, file_path):
+    if not isinstance(plan, dict) or not file_path:
+        return plan
+
+    try:
+        fp_path = Path(file_path).resolve()
+        fp = str(fp_path)
+    except Exception:
+        fp_path = Path(str(file_path))
+        fp = str(file_path)
+
+    if not fp:
+        return plan
+
+    parent_fp = str(fp_path.parent)
+
+    def _looks_like_directory_target(x):
+        s = str(x) if x is not None else ""
+        if s in {"", ".", parent_fp}:
+            return True
+        try:
+            xp = Path(s)
+            if xp.exists() and xp.is_dir():
+                return True
+        except Exception:
+            pass
+        return False
+
+    target_files = plan.get("target_files")
+    if not isinstance(target_files, list) or not target_files or any(_looks_like_directory_target(x) for x in target_files):
+        plan["target_files"] = [fp]
+
+    affected_scope = plan.get("affected_scope")
+    if isinstance(affected_scope, list):
+        if not affected_scope or any(_looks_like_directory_target(x) for x in affected_scope):
+            plan["affected_scope"] = [fp]
+
+    edits = plan.get("edits")
+    if isinstance(edits, list):
+        for edit in edits:
+            if isinstance(edit, dict):
+                cur = edit.get("file")
+                if _looks_like_directory_target(cur):
+                    edit["file"] = fp
+
+    evidence = plan.get("evidence")
+    if isinstance(evidence, dict):
+        loc = evidence.get("localization_target")
+        if _looks_like_directory_target(loc):
+            evidence["localization_target"] = fp
+
+    for key in ("target_file", "file_path_hint"):
+        cur = plan.get(key)
+        if _looks_like_directory_target(cur):
+            plan[key] = fp
+
+    return plan
+
+    try:
+        fp = str(Path(file_path).resolve())
+    except Exception:
+        fp = str(file_path)
+
+    if not fp:
+        return plan
+
+    parent_fp = str(Path(fp).parent)
+
+    def _is_rootish(x):
+        s = str(x) if x is not None else ""
+        return s in {"", ".", parent_fp}
+
+    target_files = plan.get("target_files")
+    if not isinstance(target_files, list) or not target_files or any(_is_rootish(x) for x in target_files):
+        plan["target_files"] = [fp]
+
+    affected_scope = plan.get("affected_scope")
+    if isinstance(affected_scope, list):
+        if not affected_scope or any(_is_rootish(x) for x in affected_scope):
+            plan["affected_scope"] = [fp]
+
+    edits = plan.get("edits")
+    if isinstance(edits, list):
+        for edit in edits:
+            if isinstance(edit, dict):
+                cur = edit.get("file")
+                if _is_rootish(cur):
+                    edit["file"] = fp
+
+    evidence = plan.get("evidence")
+    if isinstance(evidence, dict):
+        loc = evidence.get("localization_target")
+        if _is_rootish(loc):
+            evidence["localization_target"] = fp
+
+    for key in ("target_file", "file_path_hint"):
+        cur = plan.get(key)
+        if _is_rootish(cur):
+            plan[key] = fp
+
+    return plan
 from core.verify.contract_synth import synthesize_and_check_contract
 from core.verify.contract_propagation import check_contract_propagation
 from core.ranker.plan_ranker import rank_plans
@@ -210,6 +314,7 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
 
     enriched = []
     for plan in all_plans:
+        plan = _force_plan_target_to_file(plan, file_path)
         branch = execute_repair_plan(plan, file_path) if file_path else None
         contract = synthesize_and_check_contract(
             before_error_text=error_text,
@@ -241,11 +346,41 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
 
 
 def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool = False, exec_suggestions: bool = False, dry_run: bool = False):
+    _requested_file_path = file_path
     semantic = _build_semantic_prelude(error_text=error_text, file_path=file_path)
+    try:
+        _fp = Path(_requested_file_path).resolve() if _requested_file_path else None
+        if _fp and _fp.exists() and _fp.is_file():
+            file_path = str(_fp)
+    except Exception:
+        pass
+
     planner = _build_repair_planner_prelude(error_text=error_text, file_path=file_path, semantic=semantic)
+    planner = _force_plan_target_to_file(planner, file_path)
+    if isinstance(planner, dict) and isinstance(planner.get("source_plan"), dict):
+        planner["source_plan"] = _force_plan_target_to_file(planner["source_plan"], file_path)
 
     best_plan = (planner or {}).get("best_plan")
     plan_result = plan_to_candidate(best_plan) if best_plan else None
+    if isinstance(plan_result, dict):
+        summary_l = str(plan_result.get("summary") or "").lower()
+        target_fp = str(
+            plan_result.get("target_file")
+            or plan_result.get("file_path_hint")
+            or file_path
+            or ""
+        )
+
+        if "shell command not found" in summary_l or target_fp.endswith(".txt"):
+            plan_result["kind"] = "shell_missing_command"
+        elif "missing package" in summary_l or "dependency issue" in summary_l:
+            plan_result["kind"] = "dependency_missing_import"
+        elif "missing file" in summary_l or "file not found" in summary_l:
+            plan_result["kind"] = "runtime_file_missing"
+
+        if file_path:
+            plan_result["target_file"] = target_fp or str(file_path)
+            plan_result["file_path_hint"] = target_fp or str(file_path)
     apply_result = apply_plan(best_plan) if auto_apply and best_plan else None
 
     payload = {

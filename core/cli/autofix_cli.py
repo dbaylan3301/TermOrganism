@@ -2,133 +2,202 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import platform
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from core.autofix import run_autofix
-from core.repro.harness import run_python_file
 
 
-def _read_error_text_from_target(target: str) -> tuple[str, bool]:
-    path = Path(target)
-    if not path.exists():
-        return f"Target not found: {target}", True
+import faulthandler
+def _shell_name() -> str:
+    shell = os.environ.get("SHELL", "")
+    return Path(shell).name if shell else "unknown"
 
-    if path.suffix == ".py":
-        repro = run_python_file(str(path))
-        if repro.reproduced:
-            return repro.stderr or repro.stdout or "", True
-        return "", False
 
+def _sandbox_mode() -> str:
+    for name in ("bwrap", "firejail", "docker"):
+        if shutil.which(name):
+            return name
+    return "python-temp-workspace"
+
+
+def _local_model_hint() -> dict:
+    hints = {
+        "ollama": bool(shutil.which("ollama")),
+        "llama_cpp_server": bool(shutil.which("llama-server")),
+    }
+    hints["available"] = any(hints.values())
+    return hints
+
+
+def _dependency_health() -> dict:
+    checks = {}
+    for mod in ("json", "ast", "pathlib", "subprocess"):
+        try:
+            __import__(mod)
+            checks[mod] = True
+        except Exception:
+            checks[mod] = False
+    checks["ok"] = all(checks.values())
+    return checks
+
+
+def _workspace_health() -> dict:
+    cwd = Path.cwd()
+    probe = cwd / ".termorganism_write_probe"
     try:
-        txt = path.read_text(encoding="utf-8")
-    except Exception as exc:
-        return str(exc), True
-
-    return txt, bool(txt.strip())
-
-
-def _print_human(result: dict):
-    if result.get("ok") is True and result.get("message"):
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        return
-
-    best_plan = result.get("best_plan") or {}
-    plan_result = result.get("result") or {}
-    evidence = best_plan.get("evidence", {}) or {}
-
-    print("TermOrganism Semantic Result")
-    print("=" * 32)
-    print("plan_id     :", best_plan.get("plan_id"))
-    print("strategy    :", evidence.get("strategy"))
-    print("score       :", best_plan.get("plan_score"))
-    print("rank_tuple  :", best_plan.get("rank_tuple"))
-    print("provider    :", evidence.get("provider"))
-    print("caller      :", evidence.get("caller"))
-    print("kind        :", ((best_plan.get("edits") or [{}])[0]).get("kind"))
-    print("apply_ready :", bool(best_plan))
-    print()
-
-    if plan_result:
-        print("normalized result:")
-        print(json.dumps(plan_result, indent=2, ensure_ascii=False))
-        print()
-
-    planner = result.get("planner") or {}
-    if planner:
-        print("planner summary:")
-        print(json.dumps({
-            "candidate_count": planner.get("candidate_count"),
-            "base_plan_count": planner.get("base_plan_count"),
-            "multifile_plan_count": planner.get("multifile_plan_count"),
-        }, indent=2, ensure_ascii=False))
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        writable = True
+    except Exception:
+        writable = False
+    return {"cwd": str(cwd), "writable": writable}
 
 
-def main():
+def command_doctor(as_json: bool = False) -> int:
+    payload = {
+        "ok": True,
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "shell": _shell_name(),
+        "sandbox_mode": _sandbox_mode(),
+        "local_model": _local_model_hint(),
+        "dependency_health": _dependency_health(),
+        "workspace": _workspace_health(),
+    }
+    payload["ok"] = bool(
+        payload["dependency_health"]["ok"] and payload["workspace"]["writable"]
+    )
+
+    if as_json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+
+    print("TermOrganism Doctor")
+    print("===================")
+    print(f"Overall status : {'OK' if payload['ok'] else 'DEGRADED'}")
+    print(f"Python         : {payload['python_version']}")
+    print(f"Platform       : {payload['platform']}")
+    print(f"Shell          : {payload['shell']}")
+    print(f"Sandbox        : {payload['sandbox_mode']}")
+    print(f"Local model    : {'available' if payload['local_model']['available'] else 'not detected'}")
+    print(f"Dependencies   : {'ok' if payload['dependency_health']['ok'] else 'missing pieces'}")
+    print(f"Workspace      : {'writable' if payload['workspace']['writable'] else 'not writable'}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="termorganism")
-    parser.add_argument("target")
-    parser.add_argument("--json", action="store_true")
-    parser.add_argument("--auto-apply", action="store_true")
-    parser.add_argument("--exec", dest="exec_suggestions", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--error-text", default=None)
-    parser.add_argument("--force-semantic", action="store_true")
-    args = parser.parse_args()
+    sub = parser.add_subparsers(dest="command")
 
-    target = args.target
+    doctor = sub.add_parser("doctor")
+    doctor.add_argument("--json", action="store_true")
 
-    # explicit error text always wins
-    if args.error_text:
-        result = run_autofix(
-            error_text=args.error_text,
-            file_path=target,
-            auto_apply=args.auto_apply,
-            exec_suggestions=args.exec_suggestions,
-            dry_run=args.dry_run,
-        )
-        if args.json:
-            print(json.dumps(result, indent=2, ensure_ascii=False))
-        else:
-            _print_human(result)
-        return
+    repair = sub.add_parser("repair")
+    repair.add_argument("target")
+    repair.add_argument("--json", action="store_true")
+    repair.add_argument("--force-semantic", action="store_true")
+    repair.add_argument("--auto-apply", action="store_true")
+    repair.add_argument("--exec", action="store_true")
+    repair.add_argument("--dry-run", action="store_true")
 
-    error_text, has_error = _read_error_text_from_target(target)
+    return parser
 
-    # default healthy short-circuit unless force-semantic is enabled
-    if (not has_error) and (not args.force_semantic):
-        payload = {
-            "ok": True,
-            "message": "No error detected. Target appears healthy.",
-            "target": target,
-            "changed": False,
-        }
-        if args.json:
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
-        else:
-            _print_human(payload)
-        return
 
-    # force-semantic path: even if healthy, synthesize a semantic session
-    if args.force_semantic and not error_text.strip():
-        error_text = (
-            f"FORCED_SEMANTIC_ANALYSIS\\n"
-            f"Target: {target}\\n"
-            f"Status: currently healthy or no direct runtime failure reproduced.\\n"
-            f"Analyze semantic repair opportunities, cross-file contracts, and latent failure risks."
-        )
+def _run_repair(target: str, args: argparse.Namespace) -> int:
+    target_path = Path(target).resolve()
+
+    if not target_path.exists():
+        print(f"error: target does not exist: {target_path}", file=sys.stderr)
+        return 2
+
+    error_text = ""
+    if args.force_semantic:
+        error_text = "FORCED_SEMANTIC_ANALYSIS"
+    elif target_path.suffix == ".py":
+        try:
+            proc = subprocess.run(
+                [sys.executable, target_path.name],
+                cwd=str(target_path.parent),
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+            error_text = (proc.stderr or proc.stdout or "").strip()
+        except Exception as exc:
+            error_text = f"{type(exc).__name__}: {exc}"
+    elif target_path.suffix == ".txt":
+        try:
+            proc = subprocess.run(
+                ["bash", str(target_path)],
+                cwd=str(target_path.parent),
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+            error_text = (proc.stderr or proc.stdout or "").strip()
+        except Exception:
+            error_text = target_path.read_text(encoding="utf-8", errors="replace")
+
+        if not error_text:
+            error_text = target_path.read_text(encoding="utf-8", errors="replace")
+    else:
+        error_text = ""
 
     result = run_autofix(
         error_text=error_text,
-        file_path=target,
+        file_path=str(target_path),
         auto_apply=args.auto_apply,
-        exec_suggestions=args.exec_suggestions,
+        exec_suggestions=args.exec,
         dry_run=args.dry_run,
     )
 
+    if isinstance(result, dict):
+        behavioral = result.get("behavioral_verify")
+        if result.get("sandbox") is None and isinstance(behavioral, dict):
+            result["sandbox"] = behavioral
+
+        rr = result.get("result")
+        if isinstance(rr, dict):
+            err_l = error_text.lower()
+            summary_l = str(rr.get("summary") or "").lower()
+
+            if "modulenotfounderror" in err_l or "no module named" in err_l:
+                rr["kind"] = "dependency_install"
+            elif "command not found" in err_l or "shell command not found" in summary_l:
+                rr["kind"] = "shell_command_missing"
+            elif "filenotfounderror" in err_l or "no such file or directory" in err_l:
+                rr["kind"] = "runtime_file_missing"
+
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
-    else:
-        _print_human(result)
+        return 0
+
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
+def main() -> int:
+
+    parser = build_parser()
+    args = parser.parse_args()
+    faulthandler.dump_traceback_later(20, repeat=False)
+
+    if args.command == "doctor":
+        return command_doctor(as_json=args.json)
+
+    if args.command == "repair":
+        return _run_repair(args.target, args)
+
+    parser.print_usage(sys.stderr)
+    print("error: missing command", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+
+    raise SystemExit(main())

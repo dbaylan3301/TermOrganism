@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/root/TermOrganismGitFork/termorganism", line 5, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/root/TermOrganismGitFork/core/cli/autofix_cli.py", line 175, in main
+    return _run_repair(args.target, args)
+  File "/root/TermOrganismGitFork/core/cli/autofix_cli.py", line 123, in _run_repair
+    result = run_autofix(
+        error_text=error_text,
+    ...<3 lines>...
+        dry_run=args.dry_run,
+    )
+  File "/root/TermOrganismGitFork/core/autofix.py", line 359, in run_autofix
+    planner = _force_plan_target_to_file(planner, file_path)
+                                         ^^^^^^^
+UnboundLocalError: cannot access local variable 'planner' where it is not associated with a value

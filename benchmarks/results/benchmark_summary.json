@@ -1,0 +1,48 @@
+{
+  "total_cases": 4,
+  "passed_cases": 4,
+  "failed_cases": 0,
+  "success_rate": 1.0,
+  "median_fix_time_ms": 10154.212,
+  "mean_fix_time_ms": 12478.536,
+  "false_positive_rate": 0.0,
+  "category_stats": {
+    "cross_file": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "success_rate": 1.0,
+      "median_fix_time_ms": 21690.477,
+      "mean_fix_time_ms": 21690.477
+    },
+    "dependency": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "success_rate": 1.0,
+      "median_fix_time_ms": 7915.244,
+      "mean_fix_time_ms": 7915.244
+    },
+    "runtime": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "success_rate": 1.0,
+      "median_fix_time_ms": 12032.041,
+      "mean_fix_time_ms": 12032.041
+    },
+    "shell": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "success_rate": 1.0,
+      "median_fix_time_ms": 8276.383,
+      "mean_fix_time_ms": 8276.383
+    }
+  },
+  "generated_files": {
+    "case_results_json": "/root/TermOrganismGitFork/benchmarks/results/case_results.json",
+    "summary_json": "/root/TermOrganismGitFork/benchmarks/results/benchmark_summary.json",
+    "report_md": "/root/TermOrganismGitFork/benchmarks/reports/benchmark_report.md"
+  }
+}

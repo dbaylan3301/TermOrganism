@@ -23,32 +23,67 @@ class BranchExecutionResult:
         return asdict(self)
 
 
+def _force_file_path(path: Path, entry_file: str, workspace_root: Path) -> Path:
+    entry_name = Path(entry_file).name or "target.py"
+
+    if path == workspace_root:
+        return workspace_root / entry_name
+
+    if str(path) in {"", "."}:
+        return workspace_root / entry_name
+
+    if path.exists() and path.is_dir():
+        return path / entry_name
+
+    # suffix yoksa ve mevcut parent/workspace mantığında klasör gibi görünüyorsa entry adı ekle
+    if path.suffix == "" and path.name == workspace_root.name:
+        return workspace_root / entry_name
+
+    return path
+
+
 def execute_repair_plan(plan: dict[str, Any], entry_file: str) -> dict[str, Any]:
     tmp, layout = build_temp_workspace(entry_file)
     try:
         workspace_root = Path(layout.workspace_root)
+        project_root = Path(layout.project_root)
+
+        entry_abs = Path(entry_file).resolve()
+        try:
+            rel_entry = entry_abs.relative_to(project_root)
+        except Exception:
+            rel_entry = Path(entry_abs.name)
+
+        entry_dst = workspace_root / rel_entry
+        entry_dst = _force_file_path(entry_dst, entry_file, workspace_root)
+
         applied_files: list[str] = []
         static_verify: dict[str, Any] | None = None
 
         for edit in plan.get("edits", []):
-            target = edit.get("file")
-            if not target:
-                continue
-
-            target_abs = Path(target).resolve()
-            project_root = Path(layout.project_root)
-            try:
-                rel = target_abs.relative_to(project_root)
-            except Exception:
-                continue
-
-            dst = workspace_root / rel
-
             if edit.get("kind") == "replace_full":
                 code = edit.get("candidate_code", "") or ""
+                target = edit.get("file")
+
+                dst = entry_dst
+                if target:
+                    try:
+                        target_abs = Path(target).resolve()
+                        rel = target_abs.relative_to(project_root)
+                        candidate = workspace_root / rel
+                        if rel != Path(".") and str(rel) != "":
+                            dst = candidate
+                    except Exception:
+                        dst = entry_dst
+
+                dst = _force_file_path(dst, entry_file, workspace_root)
+
+                dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_text(code, encoding="utf-8")
                 applied_files.append(str(dst))
-                static_verify = verify_python(code)
+
+                if dst.suffix == ".py":
+                    static_verify = verify_python(code)
 
             elif edit.get("kind") == "operational":
                 for cmd in edit.get("commands", []):
@@ -61,8 +96,6 @@ def execute_repair_plan(plan: dict[str, Any], entry_file: str) -> dict[str, Any]
                         p.parent.mkdir(parents=True, exist_ok=True)
                         p.touch()
 
-        entry_abs = Path(entry_file).resolve()
-        rel_entry = entry_abs.relative_to(Path(layout.project_root))
         runtime_proc = subprocess.run(
             [sys.executable, str(rel_entry)],
             cwd=str(workspace_root),
