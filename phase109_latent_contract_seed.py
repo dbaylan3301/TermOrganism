@@ -1,4 +1,12 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+PATCHES = {
+    "core/autofix.py": r'''from __future__ import annotations
 
 from typing import Any
 from pathlib import Path
@@ -67,6 +75,7 @@ def _infer_provider_from_imports(file_path: str | None) -> str | None:
     if not candidates:
         return None
 
+    # prefer local user module over stdlib-like names
     for c in candidates:
         if c.name != p.name:
             return str(c.resolve())
@@ -88,13 +97,14 @@ def _build_semantic_prelude(error_text: str, file_path: str | None):
         caller = str(Path(file_path).resolve())
         provider = _infer_provider_from_imports(file_path)
 
-        items = [{
+        items = []
+        items.append({
             "file_path": caller,
             "line_no": None,
             "symbol": None,
             "reason": "forced semantic caller seed",
             "score": 0.91,
-        }]
+        })
         if provider:
             items.append({
                 "file_path": provider,
@@ -130,26 +140,14 @@ def _build_semantic_prelude(error_text: str, file_path: str | None):
     }
 
 
-def _resolve_semantic_target(file_path: str | None, semantic: dict[str, Any] | None) -> str | None:
-    loc = (semantic or {}).get("localization") or {}
-    top = loc.get("top") or {}
-    top_file = top.get("file_path")
-    if top_file and str(top_file).endswith(".py") and "/usr/lib/" not in str(top_file):
-        return str(Path(top_file).resolve())
-    return file_path
-
-
-def _build_candidates(error_text: str, file_path: str | None, semantic: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _build_candidates(error_text: str, file_path: str | None) -> list[dict[str, Any]]:
     ctx = type("Ctx", (), {})()
-
-    semantic_target = _resolve_semantic_target(file_path, semantic)
     ctx.error_text = error_text
-    ctx.file_path = semantic_target or file_path
+    ctx.file_path = file_path
 
-    source_target = semantic_target or file_path
-    if source_target:
+    if file_path:
         try:
-            ctx.source_code = Path(source_target).read_text(encoding="utf-8")
+            ctx.source_code = Path(file_path).read_text(encoding="utf-8")
         except Exception:
             ctx.source_code = ""
     else:
@@ -185,11 +183,7 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         project_graph=graph,
     )]
 
-    candidates = _build_candidates(
-        error_text=error_text,
-        file_path=file_path,
-        semantic=semantic,
-    )
+    candidates = _build_candidates(error_text=error_text, file_path=file_path)
 
     base_plans = build_repair_plans(
         error_text=error_text,
@@ -278,3 +272,66 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         "candidate_count": 1 if plan_result else 0,
         "candidates": [plan_result] if plan_result else [],
     }
+''',
+
+    "test_phase109_latent_contract_seed.py": r'''from __future__ import annotations
+
+import json
+import subprocess
+
+
+def run(cmd: list[str]) -> dict:
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    return {
+        "returncode": p.returncode,
+        "stdout": p.stdout,
+        "stderr": p.stderr,
+    }
+
+
+def main():
+    forced = run(["./termorganism", "demo/cross_file_dep.py", "--json", "--force-semantic"])
+    payload = json.loads(forced["stdout"])
+
+    best = payload.get("best_plan") or {}
+    ev = best.get("evidence") or {}
+    semantic = payload.get("semantic") or {}
+    localization = semantic.get("localization") or {}
+
+    print(json.dumps({
+        "forced_has_best_plan": bool(best),
+        "forced_best_plan_id": best.get("plan_id"),
+        "forced_strategy": ev.get("strategy"),
+        "forced_provider": ev.get("provider"),
+        "forced_caller": ev.get("caller"),
+        "localization_count": localization.get("count"),
+        "localization_top": localization.get("top"),
+    }, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
+'''
+}
+
+
+def backup_and_write(rel_path: str, content: str) -> None:
+    path = ROOT / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+        print(f"[BACKUP] {rel_path} -> {backup.relative_to(ROOT)}")
+    path.write_text(content, encoding="utf-8")
+    print(f"[WRITE]  {rel_path}")
+
+
+def main() -> int:
+    for rel_path, content in PATCHES.items():
+        backup_and_write(rel_path, content)
+    print("\\nDone.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

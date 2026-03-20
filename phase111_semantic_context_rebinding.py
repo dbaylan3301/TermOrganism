@@ -1,4 +1,12 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+PATCHES = {
+    "core/autofix.py": r'''from __future__ import annotations
 
 from typing import Any
 from pathlib import Path
@@ -278,3 +286,67 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         "candidate_count": 1 if plan_result else 0,
         "candidates": [plan_result] if plan_result else [],
     }
+''',
+
+    "test_phase111_semantic_context_rebinding.py": r'''from __future__ import annotations
+
+import json
+import subprocess
+
+
+def run(cmd: list[str]) -> dict:
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    return {
+        "returncode": p.returncode,
+        "stdout": p.stdout,
+        "stderr": p.stderr,
+    }
+
+
+def main():
+    forced = run(["./termorganism", "demo/cross_file_dep.py", "--json", "--force-semantic"])
+    payload = json.loads(forced["stdout"])
+
+    best = payload.get("best_plan") or {}
+    ev = best.get("evidence") or {}
+    best_edit = ((best.get("edits") or [{}])[0])
+
+    print(json.dumps({
+        "forced_has_best_plan": bool(best),
+        "forced_best_plan_id": best.get("plan_id"),
+        "forced_strategy": ev.get("strategy"),
+        "forced_provider": ev.get("provider"),
+        "forced_caller": ev.get("caller"),
+        "forced_best_kind": best_edit.get("kind"),
+        "forced_has_candidate_code": bool((best_edit.get("candidate_code", "") or "").strip()),
+        "forced_target_file": best_edit.get("file"),
+        "forced_rank_tuple": best.get("rank_tuple"),
+    }, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
+'''
+}
+
+
+def backup_and_write(rel_path: str, content: str) -> None:
+    path = ROOT / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+        print(f"[BACKUP] {rel_path} -> {backup.relative_to(ROOT)}")
+    path.write_text(content, encoding="utf-8")
+    print(f"[WRITE]  {rel_path}")
+
+
+def main() -> int:
+    for rel_path, content in PATCHES.items():
+        backup_and_write(rel_path, content)
+    print("\\nDone.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

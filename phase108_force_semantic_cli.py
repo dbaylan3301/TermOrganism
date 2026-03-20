@@ -1,4 +1,12 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+PATCHES = {
+    "core/cli/autofix_cli.py": r'''from __future__ import annotations
 
 import argparse
 import json
@@ -132,3 +140,65 @@ def main():
 
 if __name__ == "__main__":
     main()
+''',
+
+    "test_phase108_force_semantic_cli.py": r'''from __future__ import annotations
+
+import json
+import subprocess
+import sys
+
+
+def run(cmd: list[str]) -> dict:
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    return {
+        "returncode": p.returncode,
+        "stdout": p.stdout,
+        "stderr": p.stderr,
+    }
+
+
+def main():
+    baseline = run(["./termorganism", "demo/cross_file_dep.py", "--json"])
+    forced = run(["./termorganism", "demo/cross_file_dep.py", "--json", "--force-semantic"])
+
+    baseline_json = json.loads(baseline["stdout"])
+    forced_json = json.loads(forced["stdout"])
+
+    print(json.dumps({
+        "baseline_ok": baseline_json.get("ok"),
+        "baseline_message": baseline_json.get("message"),
+        "forced_has_best_plan": bool(forced_json.get("best_plan")),
+        "forced_best_plan_id": (forced_json.get("best_plan") or {}).get("plan_id"),
+        "forced_strategy": (((forced_json.get("best_plan") or {}).get("evidence") or {}).get("strategy")),
+        "forced_provider": (((forced_json.get("best_plan") or {}).get("evidence") or {}).get("provider")),
+        "forced_caller": (((forced_json.get("best_plan") or {}).get("evidence") or {}).get("caller")),
+    }, indent=2, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
+'''
+}
+
+
+def backup_and_write(rel_path: str, content: str) -> None:
+    path = ROOT / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+        print(f"[BACKUP] {rel_path} -> {backup.relative_to(ROOT)}")
+    path.write_text(content, encoding="utf-8")
+    print(f"[WRITE]  {rel_path}")
+
+
+def main() -> int:
+    for rel_path, content in PATCHES.items():
+        backup_and_write(rel_path, content)
+    print("\\nDone.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

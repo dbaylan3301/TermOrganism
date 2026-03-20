@@ -1,8 +1,148 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path.cwd()
+
+PATCHES = {
+    "core/ranker/plan_ranker.py": r'''from __future__ import annotations
+
+from typing import Any
+
+
+def _strategy_semantic_weight(strategy: str) -> float:
+    strategy = str(strategy or "")
+    if strategy == "guard_exists":
+        return 1.00
+    if strategy == "try_except_recovery":
+        return 0.72
+    if strategy == "touch_only":
+        return 0.18
+    return 0.40
+
+
+def _infer_strategy(plan: dict[str, Any]) -> str:
+    evidence = plan.get("evidence", {}) or {}
+    strategy = str(evidence.get("strategy", "") or "").strip()
+    if strategy:
+        return strategy
+
+    edits = plan.get("edits", []) or []
+    if edits:
+        first = edits[0]
+        kind = str(first.get("kind", "") or "")
+        code = str(first.get("candidate_code", "") or "")
+
+        if kind == "operational":
+            return "touch_only"
+        if 'exists() else ""' in code:
+            return "guard_exists"
+        if "except FileNotFoundError" in code:
+            return "try_except_recovery"
+
+    summary = " ".join(
+        str(x or "") for x in [
+            plan.get("hypothesis", ""),
+            *((e.get("summary", "") for e in edits)),
+        ]
+    )
+
+    if "exists" in summary:
+        return "guard_exists"
+    if "FileNotFoundError" in summary or "exception" in summary:
+        return "try_except_recovery"
+    return "unknown"
+
+
+def _has_code_edit(plan: dict[str, Any]) -> bool:
+    for edit in plan.get("edits", []) or []:
+        if edit.get("kind") == "replace_full" and (edit.get("candidate_code", "") or "").strip():
+            return True
+    return False
+
+
+def _rank_tuple(plan: dict[str, Any]):
+    evidence = dict(plan.get("evidence", {}) or {})
+    strategy = _infer_strategy(plan)
+    evidence["strategy"] = strategy
+    plan["evidence"] = evidence
+
+    confidence = float(plan.get("confidence", 0.0) or 0.0)
+    risk = float(plan.get("risk", 0.0) or 0.0)
+    blast_radius = float(plan.get("blast_radius", 0.0) or 0.0)
+
+    branch = plan.get("branch_result", {}) or {}
+    contract = plan.get("contract_result", {}) or {}
+    propagation = plan.get("contract_propagation", {}) or {}
+
+    has_code = _has_code_edit(plan)
+    multifile = evidence.get("multifile") is True
+
+    branch_bonus = 0.80 if branch.get("ok") else 0.0
+    contract_score = float(contract.get("score", 0.0) or 0.0)
+    propagation_score = float(propagation.get("score", 0.0) or 0.0)
+    semantic_bonus = _strategy_semantic_weight(strategy) * 0.90
+    multifile_bonus = 0.20 if multifile else 0.0
+    code_bonus = 0.35 if has_code else -0.45
+
+    edit_count = len(plan.get("edits", []) or [])
+    complexity_penalty = max(0, edit_count - 1) * 0.05
+
+    final_score = (
+        confidence
+        + branch_bonus
+        + contract_score
+        + propagation_score
+        + semantic_bonus
+        + multifile_bonus
+        + code_bonus
+        - risk
+        - blast_radius
+        - complexity_penalty
+    )
+
+    semantic_priority = {
+        "guard_exists": 3,
+        "try_except_recovery": 2,
+        "touch_only": 1,
+        "unknown": 0,
+    }.get(strategy, 0)
+
+    # single source of truth
+    return (
+        has_code,
+        contract_score,
+        propagation_score,
+        semantic_priority,
+        round(final_score, 6),
+    )
+
+
+def score_plan(plan: dict[str, Any]) -> float:
+    return float(_rank_tuple(plan)[-1])
+
+
+def annotate_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    rt = _rank_tuple(plan)
+    evidence = dict(plan.get("evidence", {}) or {})
+    out = dict(plan)
+    out["evidence"] = evidence
+    out["rank_tuple"] = list(rt)
+    out["plan_score"] = float(rt[-1])
+    return out
+
+
+def rank_plans(plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    annotated = [annotate_plan(dict(p)) for p in (plans or [])]
+    annotated.sort(key=lambda p: tuple(p.get("rank_tuple", [])), reverse=True)
+    return annotated
+''',
+
+    "core/autofix.py": r'''from __future__ import annotations
 
 from typing import Any
 from pathlib import Path
-import ast
 
 from core.memory import event_store
 from core.repro.harness import run_python_file, run_shell_text
@@ -39,87 +179,13 @@ class EventStoreAdapter:
             return
 
 
-def _infer_provider_from_imports(file_path: str | None) -> str | None:
-    if not file_path or not str(file_path).endswith(".py"):
-        return None
-    p = Path(file_path)
-    try:
-        src = p.read_text(encoding="utf-8")
-        tree = ast.parse(src)
-    except Exception:
-        return None
-
-    root = p.parent
-    candidates: list[Path] = []
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            if node.module:
-                mod_path = root / (node.module.replace(".", "/") + ".py")
-                if mod_path.exists():
-                    candidates.append(mod_path)
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                mod_path = root / (alias.name.replace(".", "/") + ".py")
-                if mod_path.exists():
-                    candidates.append(mod_path)
-
-    if not candidates:
-        return None
-
-    for c in candidates:
-        if c.name != p.name:
-            return str(c.resolve())
-    return str(candidates[0].resolve())
-
-
 def _build_semantic_prelude(error_text: str, file_path: str | None):
-    forced = "FORCED_SEMANTIC_ANALYSIS" in (error_text or "")
-
-    if file_path and str(file_path).endswith(".py") and not forced:
+    if file_path and str(file_path).endswith(".py"):
         repro = run_python_file(file_path)
         suspicions = localize_fault(repro.stderr or error_text, file_path=file_path)
         return {
             "repro": repro.to_dict(),
             "localization": summarize_suspicions(suspicions),
-        }
-
-    if forced and file_path and str(file_path).endswith(".py"):
-        caller = str(Path(file_path).resolve())
-        provider = _infer_provider_from_imports(file_path)
-
-        items = [{
-            "file_path": caller,
-            "line_no": None,
-            "symbol": None,
-            "reason": "forced semantic caller seed",
-            "score": 0.91,
-        }]
-        if provider:
-            items.append({
-                "file_path": provider,
-                "line_no": None,
-                "symbol": None,
-                "reason": "forced semantic provider seed",
-                "score": 0.97,
-            })
-
-        return {
-            "repro": {
-                "ok": True,
-                "command": [],
-                "cwd": str(Path(file_path).resolve().parent),
-                "returncode": 0,
-                "stdout": "",
-                "stderr": error_text,
-                "exception_type": "ForcedSemanticAnalysis",
-                "reproduced": False,
-            },
-            "localization": {
-                "count": len(items),
-                "top": items[1] if len(items) > 1 else items[0],
-                "items": items,
-            },
         }
 
     repro = run_shell_text(error_text)
@@ -130,26 +196,14 @@ def _build_semantic_prelude(error_text: str, file_path: str | None):
     }
 
 
-def _resolve_semantic_target(file_path: str | None, semantic: dict[str, Any] | None) -> str | None:
-    loc = (semantic or {}).get("localization") or {}
-    top = loc.get("top") or {}
-    top_file = top.get("file_path")
-    if top_file and str(top_file).endswith(".py") and "/usr/lib/" not in str(top_file):
-        return str(Path(top_file).resolve())
-    return file_path
-
-
-def _build_candidates(error_text: str, file_path: str | None, semantic: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _build_candidates(error_text: str, file_path: str | None) -> list[dict[str, Any]]:
     ctx = type("Ctx", (), {})()
-
-    semantic_target = _resolve_semantic_target(file_path, semantic)
     ctx.error_text = error_text
-    ctx.file_path = semantic_target or file_path
+    ctx.file_path = file_path
 
-    source_target = semantic_target or file_path
-    if source_target:
+    if file_path:
         try:
-            ctx.source_code = Path(source_target).read_text(encoding="utf-8")
+            ctx.source_code = Path(file_path).read_text(encoding="utf-8")
         except Exception:
             ctx.source_code = ""
     else:
@@ -185,11 +239,7 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         project_graph=graph,
     )]
 
-    candidates = _build_candidates(
-        error_text=error_text,
-        file_path=file_path,
-        semantic=semantic,
-    )
+    candidates = _build_candidates(error_text=error_text, file_path=file_path)
 
     base_plans = build_repair_plans(
         error_text=error_text,
@@ -278,3 +328,70 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         "candidate_count": 1 if plan_result else 0,
         "candidates": [plan_result] if plan_result else [],
     }
+''',
+
+    "test_phase105_unified_truth.py": r'''from __future__ import annotations
+
+import json
+from core.autofix import run_autofix
+
+error_text = """Traceback (most recent call last):
+  File "/root/TermOrganismGitFork/demo/cross_file_dep.py", line 3, in <module>
+    print(read_log())
+          ~~~~~~~~^^
+  File "/root/TermOrganismGitFork/demo/helper_mod.py", line 4, in read_log
+    return Path("logs/app.log").read_text()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+FileNotFoundError: [Errno 2] No such file or directory: 'logs/app.log'
+"""
+
+res = run_autofix(
+    error_text=error_text,
+    file_path="demo/cross_file_dep.py",
+)
+
+planner = res.get("planner") or {}
+best = res.get("best_plan") or {}
+ev = best.get("evidence") or {}
+
+print(json.dumps({
+    "best_plan_id": best.get("plan_id"),
+    "strategy": ev.get("strategy"),
+    "plan_score": best.get("plan_score"),
+    "rank_tuple": best.get("rank_tuple"),
+    "provider": ev.get("provider"),
+    "caller": ev.get("caller"),
+    "top_8": [
+        {
+            "plan_id": p.get("plan_id"),
+            "strategy": (p.get("evidence") or {}).get("strategy"),
+            "plan_score": p.get("plan_score"),
+            "rank_tuple": p.get("rank_tuple"),
+        }
+        for p in (planner.get("repair_plans") or [])[:8]
+    ],
+}, indent=2, ensure_ascii=False))
+'''
+}
+
+
+def backup_and_write(rel_path: str, content: str) -> None:
+    path = ROOT / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_suffix(path.suffix + ".bak")
+        backup.write_text(path.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
+        print(f"[BACKUP] {rel_path} -> {backup.relative_to(ROOT)}")
+    path.write_text(content, encoding="utf-8")
+    print(f"[WRITE]  {rel_path}")
+
+
+def main() -> int:
+    for rel_path, content in PATCHES.items():
+        backup_and_write(rel_path, content)
+    print("\\nDone.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
