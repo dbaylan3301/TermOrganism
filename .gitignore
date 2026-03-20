@@ -7,3 +7,17 @@ __pycache__/
 .termorganism/
 *.log
 .DS_Store
+
+# local backups / scratch
+*.BAK.*
+*.cast
+README.raw.txt
+README.txt
+asciRec.txt
+
+# local generated stderr/stdout fragments
+benchmarks/results/*.stdout.txt
+benchmarks/results/*.stderr.txt
+
+# local memory artifacts
+memory/TermOrganism/repair_events.jsonl
