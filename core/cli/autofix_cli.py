@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from core.autofix import run_autofix
+from core.ui.thoughts import AsyncThoughtBus, build_thought_sink
 
 
 import faulthandler
@@ -106,6 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("--auto-apply", action="store_true")
     repair.add_argument("--exec", action="store_true")
     repair.add_argument("--dry-run", action="store_true")
+    repair.add_argument("--think", action="store_true")
+    repair.add_argument("--think-jsonl", default=None)
 
     return parser
 
@@ -215,13 +218,24 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     else:
         error_text = ""
 
-    result = run_autofix(
-        error_text=error_text,
-        file_path=str(target_path),
-        auto_apply=args.auto_apply,
-        exec_suggestions=args.exec,
-        dry_run=args.dry_run,
+    sink = build_thought_sink(
+        enable_live=args.think,
+        jsonl_path=args.think_jsonl,
     )
+    bus = AsyncThoughtBus(sink) if sink is not None else None
+
+    try:
+        result = run_autofix(
+            error_text=error_text,
+            file_path=str(target_path),
+            auto_apply=args.auto_apply,
+            exec_suggestions=args.exec,
+            dry_run=args.dry_run,
+            thought_bus=bus,
+        )
+    finally:
+        if bus is not None:
+            bus.close()
 
     if isinstance(result, dict):
         behavioral = result.get("behavioral_verify")

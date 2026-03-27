@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.ui.thoughts import ThoughtEvent
 
 from typing import Any
 from pathlib import Path
@@ -243,6 +244,35 @@ def _resolve_semantic_target(file_path: str | None, semantic: dict[str, Any] | N
     return file_path
 
 
+def _emit_thought(
+    thought_bus,
+    phase: str,
+    message: str,
+    *,
+    kind: str = "info",
+    confidence: float | None = None,
+    file_path: str | None = None,
+    line_no: int | None = None,
+    meta: dict[str, Any] | None = None,
+) -> None:
+    if thought_bus is None:
+        return
+    try:
+        thought_bus.emit(
+            ThoughtEvent(
+                phase=phase,
+                message=message,
+                kind=kind,
+                confidence=confidence,
+                file_path=file_path,
+                line_no=line_no,
+                meta=meta or {},
+            )
+        )
+    except Exception:
+        pass
+
+
 def _build_candidates(error_text: str, file_path: str | None, semantic: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     ctx = type("Ctx", (), {})()
 
@@ -280,7 +310,7 @@ def _build_candidates(error_text: str, file_path: str | None, semantic: dict[str
     return candidates
 
 
-def _build_repair_planner_prelude(error_text: str, file_path: str | None, semantic: dict[str, Any] | None):
+def _build_repair_planner_prelude(error_text: str, file_path: str | None, semantic: dict[str, Any] | None, thought_bus=None):
     graph = build_project_graph(file_path).to_dict() if file_path else {"project_root": str("."), "files": [], "adjacency": {}}
 
     causes = [c.to_dict() for c in analyze_failure_causes(
@@ -293,6 +323,13 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         error_text=error_text,
         file_path=file_path,
         semantic=semantic,
+    )
+
+    _emit_thought(
+        thought_bus,
+        "Candidate Generation",
+        f"{len(candidates)} candidates produced",
+        kind="info",
     )
 
     base_plans = build_repair_plans(
@@ -308,6 +345,13 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         base_plans=base_plans,
         file_path=file_path,
         semantic=semantic,
+    )
+
+    _emit_thought(
+        thought_bus,
+        "Planning",
+        f"base_plans={len(base_plans)} multifile_plans={len(multifile_plans)}",
+        kind="info",
     )
 
     all_plans = list(base_plans) + list(multifile_plans)
@@ -329,6 +373,27 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         enriched.append(p2)
 
     ranked = rank_plans(enriched)
+
+    if ranked:
+        best = ranked[0]
+        evidence = best.get("evidence") or {}
+        strategy = evidence.get("strategy") or "unknown"
+        target = ((best.get("edits") or [{}])[0].get("file")) or best.get("target_file")
+        _emit_thought(
+            thought_bus,
+            "Ranking",
+            f"best strategy={strategy} target={target}",
+            kind="success",
+            confidence=best.get("confidence"),
+            file_path=target,
+        )
+    else:
+        _emit_thought(
+            thought_bus,
+            "Ranking",
+            "no ranked plans available",
+            kind="fail",
+        )
     best_plan = ranked[0] if ranked else None
 
     return {
@@ -345,9 +410,42 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
     }
 
 
-def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool = False, exec_suggestions: bool = False, dry_run: bool = False):
+def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool = False, exec_suggestions: bool = False, dry_run: bool = False, thought_bus=None):
     _requested_file_path = file_path
+    _emit_thought(
+        thought_bus,
+        "Input",
+        f"target={file_path or '<none>'}",
+        kind="info",
+    )
     semantic = _build_semantic_prelude(error_text=error_text, file_path=file_path)
+
+    repro = (semantic or {}).get("repro") or {}
+    loc = (semantic or {}).get("localization") or {}
+    top = loc.get("top") or {}
+
+    repro_msg = (
+        "forced semantic mode: runtime repro skipped"
+        if repro.get("exception_type") == "ForcedSemanticAnalysis"
+        else f"reproduced={repro.get('reproduced')} returncode={repro.get('returncode')} exception={repro.get('exception_type')}"
+    )
+    _emit_thought(
+        thought_bus,
+        "Reproduction",
+        repro_msg,
+        kind="success" if repro.get("ok") or repro.get("exception_type") == "ForcedSemanticAnalysis" else "warn",
+    )
+
+    if top:
+        _emit_thought(
+            thought_bus,
+            "Localization",
+            f"top={top.get('file_path')} reason={top.get('reason')}",
+            kind="info",
+            confidence=top.get("score"),
+            file_path=top.get("file_path"),
+            line_no=top.get("line_no"),
+        )
     try:
         _fp = Path(_requested_file_path).resolve() if _requested_file_path else None
         if _fp and _fp.exists() and _fp.is_file():
@@ -355,12 +453,32 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
     except Exception:
         pass
 
-    planner = _build_repair_planner_prelude(error_text=error_text, file_path=file_path, semantic=semantic)
+    planner = _build_repair_planner_prelude(error_text=error_text, file_path=file_path, semantic=semantic, thought_bus=thought_bus)
     planner = _force_plan_target_to_file(planner, file_path)
     if isinstance(planner, dict) and isinstance(planner.get("source_plan"), dict):
         planner["source_plan"] = _force_plan_target_to_file(planner["source_plan"], file_path)
 
     best_plan = (planner or {}).get("best_plan")
+
+    if best_plan:
+        evidence = best_plan.get("evidence") or {}
+        strategy = evidence.get("strategy") or "unknown"
+        target = ((best_plan.get("edits") or [{}])[0].get("file")) or best_plan.get("target_file")
+        _emit_thought(
+            thought_bus,
+            "Final Selection",
+            f"strategy={strategy} target={target}",
+            kind="success",
+            confidence=best_plan.get("confidence"),
+            file_path=target,
+        )
+    else:
+        _emit_thought(
+            thought_bus,
+            "Final Selection",
+            "no best plan selected",
+            kind="fail",
+        )
     plan_result = plan_to_candidate(best_plan) if best_plan else None
     if isinstance(plan_result, dict):
         summary_l = str(plan_result.get("summary") or "").lower()
@@ -392,6 +510,46 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         "apply": apply_result,
     }
     EventStoreAdapter().append_event(payload)
+
+    result_obj = payload.get("result") or {}
+    behavioral = (
+        payload.get("behavioral_verify")
+        or payload.get("sandbox")
+        or payload.get("branch_result")
+        or result_obj.get("branch_result")
+        or {}
+    )
+    contract = (
+        payload.get("contract_result")
+        or result_obj.get("contract_result")
+        or {}
+    )
+    apply_result = payload.get("apply") or {}
+
+    if isinstance(behavioral, dict) and behavioral:
+        _emit_thought(
+            thought_bus,
+            "Sandbox",
+            f"ok={behavioral.get('ok')} returncode={(behavioral.get('runtime') or {}).get('returncode')}",
+            kind="success" if behavioral.get("ok") else "fail",
+        )
+
+    if isinstance(contract, dict) and contract:
+        _emit_thought(
+            thought_bus,
+            "Contract",
+            f"ok={contract.get('ok')} score={contract.get('score')}",
+            kind="success" if contract.get("ok") else "fail",
+        )
+
+    if auto_apply:
+        _emit_thought(
+            thought_bus,
+            "Apply",
+            f"auto_apply={'yes' if apply_result else 'no-op'}",
+            kind="success" if apply_result else "warn",
+        )
+
 
     return {
         "result": plan_result,
