@@ -22,7 +22,7 @@
 [![asciicast](https://asciinema.org/a/LZcTG3jv2u6N0bAF.svg)](https://asciinema.org/a/LZcTG3jv2u6N0bAF)
 
 
-**Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and benchmark-backed proof.**
+**Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and live think-tree traces.**
 
 TermOrganism does not stop at suggesting a fix.  
 It localizes the fault, proposes a repair, executes that repair in an isolated workspace, checks behavior, and returns structured output that can be benchmarked.
