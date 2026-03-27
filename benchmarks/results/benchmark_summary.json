@@ -3,8 +3,8 @@
   "passed_cases": 20,
   "failed_cases": 0,
   "success_rate": 1.0,
-  "median_fix_time_ms": 10559.483,
-  "mean_fix_time_ms": 13893.137,
+  "median_fix_time_ms": 12392.673,
+  "mean_fix_time_ms": 16623.799,
   "false_positive_rate": 0.0,
   "category_stats": {
     "cross_file": {
@@ -12,32 +12,32 @@
       "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 24810.794,
-      "mean_fix_time_ms": 25048.189
+      "median_fix_time_ms": 29861.725,
+      "mean_fix_time_ms": 29671.168
     },
     "dependency": {
       "total": 5,
       "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 9474.491,
-      "mean_fix_time_ms": 9561.803
+      "median_fix_time_ms": 11560.714,
+      "mean_fix_time_ms": 11025.797
     },
     "runtime": {
       "total": 5,
       "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 12154.092,
-      "mean_fix_time_ms": 11801.636
+      "median_fix_time_ms": 14858.897,
+      "mean_fix_time_ms": 14946.44
     },
     "shell": {
       "total": 5,
       "passed": 5,
       "failed": 0,
       "success_rate": 1.0,
-      "median_fix_time_ms": 9206.183,
-      "mean_fix_time_ms": 9160.918
+      "median_fix_time_ms": 10860.521,
+      "mean_fix_time_ms": 10851.789
     }
   },
   "generated_files": {
