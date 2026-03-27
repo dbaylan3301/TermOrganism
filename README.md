@@ -6,6 +6,7 @@
 ![False Positives](https://img.shields.io/badge/false_positives-0.0-success)
 ![Cross-File](https://img.shields.io/badge/cross--file-repair-blue)
 ![Sandbox Verified](https://img.shields.io/badge/sandbox-verified-purple)
+![Competitive Edge](https://img.shields.io/badge/cross--file+verified-repair-blue)
 
 **Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and benchmark-backed proof.**
 
@@ -172,7 +173,27 @@ The bundled demo fixtures and benchmark suite are already enough to see the core
 | Benchmark-backed evidence in repo | Yes |
 
 ---
+## Comparison with Other Terminal AI Tools
 
+TermOrganism focuses on **verification-first, self-healing repair** rather than just suggestion or agentic prompting.
+
+| Özellik                              | TermOrganism                          | Claude Code (Anthropic)          | Cursor CLI                       | Gemini CLI                     | Diğer Open Terminal Ajanlar     |
+|--------------------------------------|---------------------------------------|----------------------------------|----------------------------------|--------------------------------|---------------------------------|
+| Cross-file semantic repair           | ✓✓✓ (provider/caller aware + force-semantic) | ✓✓ (kısmi, öneri odaklı)        | ✓✓                              | ✓                             | ✓ (çoğu basit)                 |
+| Sandbox-verified fixes               | ✓✓✓ (zorunlu behavioral + contract check) | ✗                               | ✓ (kısmi)                        | ✗                             | ✗                              |
+| Memory-guided ranking & learning     | ✓✓✓                                   | ✗                               | ✗                                | ✗                             | ✗ (çoğu stateless)             |
+| Force-semantic (latent bug detection on healthy code) | ✓✓✓                        | ✗                               | ✗                                | ✗                             | ✗                              |
+| Structured JSON + reproducible benchmark | ✓✓✓ (20/20 %100 success, 0 false positive) | ✗                            | kısmi                            | ✗                             | ✗                              |
+| Local-first / Offline support        | Planlandı (MoE pipeline mevcut)       | ✗ (cloud zorunlu)               | Kısmi                            | ✗                             | Bazı açık kaynaklarda var      |
+| Multi-language desteği               | Şu an Python + Shell (%98 Python)     | Geniş (ama terminal sınırlı)    | Geniş                            | Geniş                         | Değişken                       |
+| Git-aware / PR entegrasyonu          | ✗ (Roadmap'de)                        | Kısmi                           | ✓                                | ✗                             | Bazı projelerde var            |
+| Kurulum kolaylığı                   | Orta (git clone + python -u)          | Kolay (Claude aboneliği)        | Çok kolay                        | Kolay                         | Değişken                       |
+| Demo & Proof kalitesi                | 3 Asciinema + %100 benchmark          | Resmi demo'lar                  | İyi                              | İyi                           | Genelde zayıf                  |
+| Olgunluk seviyesi                    | v0.1.0 (Prototype ama benchmark-backed) | Üretim seviyesi                 | Üretim                           | Beta/Üretim                   | Çoğu erken aşama               |
+
+**TermOrganism'ın öne çıktığı nokta:**  
+Sandbox'ta doğrulama + cross-file semantic localization + force-semantic proaktif analiz + sıfır false positive benchmark.  
+Çoğu rakip "öneride bulunur", TermOrganism **düzelttikten sonra doğrular ve öğrenir**.
 ## Core capabilities
 
 - **Execution-aware repair routing**
