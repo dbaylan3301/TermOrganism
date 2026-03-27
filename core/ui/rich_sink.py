@@ -101,10 +101,32 @@ class RichTreeThoughtSink(ThoughtSink):
 
         return Text("".join(parts), style=self._style_for(event.kind))
 
+    def _phase_label(self, phase: str) -> str:
+        icons = {
+            "Input": "⟡",
+            "Reproduction": "⟳",
+            "Localization": "⌁",
+            "Expert Routing": "⇢",
+            "Hypothesis Generation": "∴",
+            "Candidate Generation": "⎇",
+            "Planning": "⋯",
+            "Plan Expansion": "⊞",
+            "Ranking": "★",
+            "Plan Rejection": "×",
+            "Final Selection": "✔",
+            "Sandbox Replay": "▣",
+            "Sandbox": "🧪",
+            "Contract Scoring": "∑",
+            "Contract": "⚖",
+            "Apply": "⬢",
+        }
+        icon = icons.get(phase, "•")
+        return f"[bold]{icon} {phase}[/bold]"
+
     def _render(self):
         root = Tree("[bold cyan]TermOrganism Thinking[/bold cyan]")
         for phase in self.phase_order:
-            phase_node = root.add(f"[bold]{phase}[/bold]")
+            phase_node = root.add(self._phase_label(phase))
             for event in self.phase_events.get(phase, []):
                 phase_node.add(self._event_text(event))
         return Panel(root, title="TermOrganism Thinking", border_style="blue")

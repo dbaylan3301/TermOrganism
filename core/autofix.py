@@ -332,6 +332,25 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         kind="info",
     )
 
+    expert_names = sorted({str((c or {}).get("expert") or "unknown") for c in candidates if isinstance(c, dict)})
+    _emit_thought(
+        thought_bus,
+        "Expert Routing",
+        "experts=" + ", ".join(expert_names),
+        kind="info",
+    )
+
+    for cand in list(candidates)[:3]:
+        if isinstance(cand, dict):
+            _emit_thought(
+                thought_bus,
+                "Hypothesis Generation",
+                str(cand.get("summary") or cand.get("semantic_claim") or cand.get("hypothesis") or "candidate proposed"),
+                kind="info",
+                confidence=cand.get("confidence"),
+                file_path=cand.get("target_file") or cand.get("file_path_hint"),
+            )
+
     base_plans = build_repair_plans(
         error_text=error_text,
         semantic=semantic,
@@ -351,6 +370,13 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
         thought_bus,
         "Planning",
         f"base_plans={len(base_plans)} multifile_plans={len(multifile_plans)}",
+        kind="info",
+    )
+
+    _emit_thought(
+        thought_bus,
+        "Plan Expansion",
+        f"total_plans={len(base_plans) + len(multifile_plans)}",
         kind="info",
     )
 
@@ -386,6 +412,12 @@ def _build_repair_planner_prelude(error_text: str, file_path: str | None, semant
             kind="success",
             confidence=best.get("confidence"),
             file_path=target,
+        )
+        _emit_thought(
+            thought_bus,
+            "Plan Rejection",
+            f"rejected={max(0, len(ranked) - 1)} alternate_plans={max(0, len(ranked) - 1)}",
+            kind="warn" if len(ranked) > 1 else "info",
         )
     else:
         _emit_thought(
@@ -551,12 +583,24 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
     if isinstance(behavioral, dict) and behavioral:
         _emit_thought(
             thought_bus,
+            "Sandbox Replay",
+            f"workspace={behavioral.get('workspace_root')} applied_files={len(behavioral.get('applied_files') or [])}",
+            kind="info",
+        )
+        _emit_thought(
+            thought_bus,
             "Sandbox",
             f"ok={behavioral.get('ok')} returncode={(behavioral.get('runtime') or {}).get('returncode')}",
             kind="success" if behavioral.get("ok") else "fail",
         )
 
     if isinstance(contract, dict) and contract:
+        _emit_thought(
+            thought_bus,
+            "Contract Scoring",
+            f"checks={len(contract.get('checks') or [])}",
+            kind="info",
+        )
         _emit_thought(
             thought_bus,
             "Contract",
