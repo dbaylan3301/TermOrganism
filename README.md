@@ -8,6 +8,20 @@
 ![Sandbox Verified](https://img.shields.io/badge/sandbox-verified-purple)
 ![Competitive Edge](https://img.shields.io/badge/cross--file+verified-repair-blue)
 
+
+
+## Watch it work
+
+### Runtime repair with live reasoning
+[![asciicast](https://asciinema.org/a/LcDu2e63ku7YEti4.svg)](https://asciinema.org/a/LcDu2e63ku7YEti4)
+
+### Cross-file semantic repair with think-tree
+[![asciicast](https://asciinema.org/a/hzjcz63rUg4Z7CMQ.svg)](https://asciinema.org/a/hzjcz63rUg4Z7CMQ)
+
+### Benchmark proof: 20 / 20
+[![asciicast](https://asciinema.org/a/LZcTG3jv2u6N0bAF.svg)](https://asciinema.org/a/LZcTG3jv2u6N0bAF)
+
+
 **Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and benchmark-backed proof.**
 
 TermOrganism does not stop at suggesting a fix.  
