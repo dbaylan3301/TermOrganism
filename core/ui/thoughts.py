@@ -103,10 +103,20 @@ class AsyncThoughtBus:
             pass
 
 
-def build_thought_sink(enable_live: bool = False, jsonl_path: str | None = None) -> ThoughtSink | None:
+def build_thought_sink(
+    enable_live: bool = False,
+    enable_tree: bool = False,
+    jsonl_path: str | None = None,
+) -> ThoughtSink | None:
     sinks: list[ThoughtSink] = []
 
-    if enable_live:
+    if enable_tree:
+        try:
+            from core.ui.rich_sink import RichTreeThoughtSink
+            sinks.append(RichTreeThoughtSink())
+        except Exception as exc:
+            print(f"[termorganism] --think-tree disabled: {exc}", file=sys.stderr)
+    elif enable_live:
         try:
             from core.ui.rich_sink import RichLiveThoughtSink
             sinks.append(RichLiveThoughtSink())
