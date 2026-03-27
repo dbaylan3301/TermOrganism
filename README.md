@@ -191,9 +191,12 @@ This makes TermOrganism useful not only as a repair tool, but also as a debuggab
 
 ### Repo-local run
 
+
 ```bash
 git clone https://github.com/dbaylan3301/TermOrganism.git
 cd TermOrganism
+pip install -r requirements.txt
+
 python3 -u termorganism doctor
 python3 -u termorganism repair demo/broken_runtime.py --json
 ```
