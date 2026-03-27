@@ -464,6 +464,28 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         evidence = best_plan.get("evidence") or {}
         strategy = evidence.get("strategy") or "unknown"
         target = ((best_plan.get("edits") or [{}])[0].get("file")) or best_plan.get("target_file")
+
+        provider = evidence.get("provider")
+        caller = evidence.get("caller")
+
+        if provider:
+            _emit_thought(
+                thought_bus,
+                "Localization",
+                f"provider={provider}",
+                kind="info",
+                file_path=provider,
+            )
+
+        if caller:
+            _emit_thought(
+                thought_bus,
+                "Localization",
+                f"caller={caller}",
+                kind="info",
+                file_path=caller,
+            )
+
         _emit_thought(
             thought_bus,
             "Final Selection",
