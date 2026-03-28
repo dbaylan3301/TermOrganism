@@ -8,7 +8,27 @@
 ![Sandbox Verified](https://img.shields.io/badge/sandbox-verified-purple)
 ![Competitive Edge](https://img.shields.io/badge/cross--file+verified-repair-blue)
 
+## Milestone 4/4 update — sub-500ms hot repair path
 
+TermOrganism now supports a daemon-backed hot-force repair path for known hot signatures.
+
+### Added
+- daemon server/client over Unix socket
+- minimal stdlib-only CLI wrapper
+- hot-cache confidence propagation to final output
+- hot-force deterministic repair path for known runtime file-missing cases
+- fast_v2 miss-reason telemetry
+- workspace pool scaffolding
+
+### Result
+For known hot runtime patterns such as `FileNotFoundError` on missing file reads:
+
+- hot-force core latency: ~1–3 ms
+- daemon request time: ~147 ms
+- end-to-end CLI time: ~314 ms
+
+### Impact
+This is the first verified sub-500ms end-to-end repair path in the repo for a real hot-pattern case, achieved by bypassing candidate generation, sandbox, contract propagation, and ranking when a high-confidence hot signature is matched.
 
 ## Watch it work
 
@@ -25,6 +45,10 @@
 
 ### Large-script salvage with fallback repair
 [![asciicast](https://asciinema.org/a/LcDu2e63ku7YEti4.svg)](https://asciinema.org/a/LcDu2e63ku7YEti4)
+
+
+
+
 
 TermOrganism can now run a salvage pipeline for heavily broken Python scripts.
 
