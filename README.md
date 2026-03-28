@@ -53,6 +53,18 @@ It localizes the fault, proposes a repair, executes that repair in an isolated w
 
 ---
 
+### Fast mode status
+
+TermOrganism includes an experimental `--fast` execution path.
+
+Current benchmark evidence shows that fast-mode performance is **category-dependent**:
+- strong wins on several cross-file cases
+- wins on multiple shell/dependency cases
+- regressions still exist on some runtime cases
+
+Correctness on the current 20-case suite remains preserved, but fast-mode is not yet promoted as the default execution path.
+
+
 ## Demo recordings
 
 ### Runtime autofix
