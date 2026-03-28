@@ -351,13 +351,19 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     bus = AsyncThoughtBus(sink) if sink is not None else None
 
     try:
+        if getattr(args, "sandbox_backend", None):
+            os.environ["TERMORGANISM_SANDBOX_BACKEND"] = str(args.sandbox_backend)
+        if getattr(args, "sandbox_timeout", None) is not None:
+            os.environ["TERMORGANISM_SANDBOX_TIMEOUT"] = str(args.sandbox_timeout)
+        if getattr(args, "sandbox_memory_mb", None) is not None:
+            os.environ["TERMORGANISM_SANDBOX_MEMORY_MB"] = str(args.sandbox_memory_mb)
         result = _call_run_autofix_compat(fast=_fast_requested(args), 
-            error_text=error_text,
-            file_path=str(target_path),
-            auto_apply=args.auto_apply,
-            exec_suggestions=args.exec,
-            dry_run=args.dry_run,
-            thought_bus=bus,
+        error_text=error_text,
+        file_path=str(target_path),
+        auto_apply=args.auto_apply,
+        exec_suggestions=args.exec,
+        dry_run=args.dry_run,
+        thought_bus=bus,
         )
     finally:
         if bus is not None:

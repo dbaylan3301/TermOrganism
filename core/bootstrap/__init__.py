@@ -1,0 +1,2 @@
+from core.bootstrap.self_heal import bootstrap_then_run_main
+from core.bootstrap.preflight import discover_critical_files, preflight_compile_graph

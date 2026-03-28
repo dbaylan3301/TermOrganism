@@ -4,9 +4,15 @@ from core.ui.thoughts import ThoughtEvent
 from typing import Any
 from pathlib import Path
 import ast
+from datetime import datetime
+import uuid
+import os
+import re
+import asyncio
 from time import perf_counter
 
 from core.memory import event_store
+from core.memory.engine import MemoryEngine, RepairRecord
 from core.repro.harness import run_python_file, run_shell_text
 from core.semantic.fault_localizer import localize_fault, summarize_suspicions
 from core.project.graph import build_project_graph
@@ -122,6 +128,8 @@ def _force_plan_target_to_file(plan, file_path):
     return plan
 from core.verify.contract_synth import synthesize_and_check_contract
 from core.verify.contract_propagation import check_contract_propagation
+from core.verify.javascript_verify import is_javascript_path, verify_javascript_candidate
+from core.observability import get_repair_metrics, emit_repair_trace
 from core.ranker.plan_ranker import rank_plans
 from core.planner.plan_normalizer import plan_to_candidate
 from core.planner.plan_apply import apply_plan
@@ -272,6 +280,280 @@ def _call_analyze_failure_causes_compat(
 
 def _ms(start: float, end: float) -> float:
     return round((end - start) * 1000.0, 3)
+
+
+
+
+_MEMORY_ENGINE_SINGLETON = None
+
+
+def _get_memory_engine():
+    global _MEMORY_ENGINE_SINGLETON
+    if _MEMORY_ENGINE_SINGLETON is None:
+        try:
+            _MEMORY_ENGINE_SINGLETON = MemoryEngine()
+        except Exception:
+            _MEMORY_ENGINE_SINGLETON = False
+    return _MEMORY_ENGINE_SINGLETON if _MEMORY_ENGINE_SINGLETON is not False else None
+
+
+def _memory_extract_error_type(error_text: str, semantic: dict[str, Any] | None = None) -> str:
+    repro = (semantic or {}).get("repro") or {}
+    et = repro.get("exception_type")
+    if et:
+        return str(et)
+    m = re.search(r"([A-Za-z_][A-Za-z0-9_]*Error)", error_text or "")
+    return m.group(1) if m else "UnknownError"
+
+
+def _memory_build_context(error_text: str, file_path: str | None, semantic: dict[str, Any] | None = None) -> dict[str, Any]:
+    frames = []
+    if " _extract_traceback_frames" == "_extract_traceback_frames" and "_extract_traceback_frames" in globals():
+        try:
+            frames = _extract_traceback_frames(error_text)
+        except Exception:
+            frames = []
+
+    if not frames:
+        for m in re.finditer(r'File "([^"]+)", line (\d+)', error_text or ""):
+            frames.append({
+                "filename": m.group(1),
+                "lineno": int(m.group(2)),
+                "function": "unknown",
+                "error_type": _memory_extract_error_type(error_text, semantic),
+            })
+
+    return {
+        "target_file": file_path,
+        "error_text": error_text,
+        "error_type": _memory_extract_error_type(error_text, semantic),
+        "traceback": frames,
+    }
+
+
+def _memory_enrich_payload(payload: dict[str, Any], *, error_text: str, file_path: str | None, semantic: dict[str, Any] | None = None) -> dict[str, Any]:
+    engine = _get_memory_engine()
+    if engine is None or not isinstance(payload, dict):
+        return payload
+
+    context = _memory_build_context(error_text, file_path, semantic)
+    failure_signature = engine._normalize_failure(context)
+    result = payload.get("result") or {}
+    if not isinstance(result, dict):
+        result = {}
+        payload["result"] = result
+
+    metadata = result.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+        result["metadata"] = metadata
+
+    repair_type = str(
+        result.get("kind")
+        or metadata.get("strategy")
+        or result.get("expert")
+        or "unknown"
+    )
+
+    prior = float(engine.get_repair_prior(failure_signature, repair_type))
+    similar = []
+    suggestion = None
+    if file_path:
+        try:
+            project_hash = engine.project_hash_for(Path(file_path))
+            similar = engine.find_similar_repairs(failure_signature, project_hash=project_hash, limit=3)
+            suggestion = engine.suggest_from_memory(context, Path(file_path))
+        except Exception:
+            similar = []
+            suggestion = None
+
+    result["memory_prior"] = prior
+    result["historical_success_prior"] = prior
+    metadata["memory_prior"] = prior
+    metadata["historical_success_prior"] = prior
+    metadata["failure_signature"] = failure_signature
+    metadata["similar_repairs_found"] = len(similar)
+
+    payload["memory"] = {
+        "failure_signature": failure_signature,
+        "memory_prior": prior,
+        "similar_repairs_found": len(similar),
+        "suggestion": suggestion,
+    }
+
+    conf = payload.get("confidence")
+    if isinstance(conf, dict):
+        factors = conf.get("factors")
+        if not isinstance(factors, dict):
+            factors = {}
+            conf["factors"] = factors
+        factors["memory_prior"] = prior
+
+    return payload
+
+
+def _memory_record_payload(payload: dict[str, Any], *, error_text: str, file_path: str | None, semantic: dict[str, Any] | None = None) -> None:
+    engine = _get_memory_engine()
+    if engine is None or not file_path or not isinstance(payload, dict):
+        return
+
+    try:
+        target = Path(file_path)
+        context = _memory_build_context(error_text, file_path, semantic)
+        failure_signature = engine._normalize_failure(context)
+        result = payload.get("result") or {}
+        metadata = result.get("metadata") or {}
+        repair_type = str(
+            result.get("kind")
+            or metadata.get("strategy")
+            or result.get("expert")
+            or "unknown"
+        )
+        repair_code = str(
+            result.get("candidate_code")
+            or result.get("patch")
+            or ""
+        )
+
+        confidence = float(
+            ((payload.get("confidence") or {}).get("score"))
+            or result.get("confidence")
+            or 0.0
+        )
+
+        success_verified = bool(
+            ((payload.get("verify") or {}).get("ok"))
+            or ((payload.get("contract_result") or {}).get("ok"))
+            or ((payload.get("behavioral_verify") or {}).get("ok"))
+        )
+
+        metrics = payload.get("metrics") or {}
+        context_summary = {
+            "latency_ms": int(float(metrics.get("total_ms", 0) or 0)),
+            "sandbox_used": bool(payload.get("sandbox")),
+            "route": ",".join(payload.get("routes") or []),
+            "mode": metrics.get("mode"),
+        }
+
+        rec = RepairRecord(
+            id=str(uuid.uuid4()),
+            project_hash=engine.project_hash_for(target),
+            file_hash=engine.file_hash_for(target),
+            failure_signature=failure_signature,
+            repair_type=repair_type,
+            repair_code=repair_code,
+            confidence=confidence,
+            success_verified=success_verified,
+            timestamp=datetime.utcnow(),
+            context_summary=context_summary,
+        )
+        engine.record_repair(rec, local_only=not (success_verified and confidence > 0.9))
+    except Exception:
+        return
+
+
+
+
+def _maybe_attach_javascript_verification(payload: dict[str, Any], *, file_path: str | None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    if not is_javascript_path(file_path):
+        return payload
+
+    result = payload.get("result") or {}
+    code = ""
+    if isinstance(result, dict):
+        code = str(result.get("candidate_code") or result.get("code") or "")
+
+    if not code.strip():
+        return payload
+
+    try:
+        jsv = verify_javascript_candidate(
+            code=code,
+            target_file=file_path,
+            project_root=str(Path(file_path).resolve().parent if file_path else Path.cwd()),
+        )
+    except Exception as exc:
+        payload.setdefault("verification", {})
+        payload["verification"]["javascript"] = {
+            "ok": False,
+            "error": str(exc),
+            "confidence": 0.0,
+        }
+        return payload
+
+    payload.setdefault("verification", {})
+    payload["verification"]["javascript"] = jsv
+
+    conf = payload.get("confidence")
+    if isinstance(conf, dict):
+        factors = conf.get("factors")
+        if not isinstance(factors, dict):
+            factors = {}
+            conf["factors"] = factors
+        factors["javascript_verify"] = float(jsv.get("confidence", 0.0) or 0.0)
+
+    if isinstance(result, dict):
+        meta = result.get("metadata") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["javascript_verify"] = {
+            "ok": bool(jsv.get("ok")),
+            "confidence": float(jsv.get("confidence", 0.0) or 0.0),
+            "language": jsv.get("language"),
+        }
+        result["metadata"] = meta
+
+    return payload
+
+
+
+
+def _observability_language(file_path: str | None) -> str:
+    ext = Path(str(file_path or "")).suffix.lower()
+    if ext in {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}:
+        return "javascript"
+    if ext in {".py"}:
+        return "python"
+    if ext in {".sh", ".bash", ".zsh", ".txt"}:
+        return "shell"
+    return "unknown"
+
+
+def _record_observability(payload: dict[str, Any], *, file_path: str | None, fast: bool) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    metrics = get_repair_metrics()
+    language = _observability_language(file_path)
+    mode = str(((payload.get("metrics") or {}).get("mode")) or ("fast" if fast else "normal"))
+    duration = float(((payload.get("metrics") or {}).get("total_ms", 0.0) or 0.0)) / 1000.0
+    success = bool(((payload.get("verify") or {}).get("ok")))
+    confidence = float(
+        ((payload.get("confidence") or {}).get("score"))
+        or ((payload.get("result") or {}).get("confidence"))
+        or 0.0
+    )
+
+    try:
+        metrics.record_repair(mode=mode, language=language, duration=duration, success=success, confidence=confidence)
+        memory = payload.get("memory") or {}
+        if isinstance(memory, dict):
+            metrics.set_memory_size("current", int(memory.get("similar_repairs_found", 0) or 0))
+    except Exception:
+        pass
+
+    try:
+        emit_repair_trace("run_autofix", payload, file_path=file_path, fast=fast)
+    except Exception:
+        pass
+
+    payload.setdefault("observability", {})
+    payload["observability"]["metrics_enabled"] = bool(getattr(metrics, "enabled", False))
+    payload["observability"]["tracing_enabled"] = bool(os.getenv("TERMORGANISM_TRACING", "").strip().lower() in {"1", "true", "yes", "on"})
+    payload["observability"]["language"] = language
+    return payload
 
 
 class EventStoreAdapter:
@@ -594,6 +876,13 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         f"target={file_path or '<none>'}",
         kind="info",
     )
+
+    if _fast_engine_supported(error_text=error_text, file_path=file_path, fast=fast):
+        _fast_payload = _run_fast_engine_repair(error_text=error_text, file_path=str(file_path), thought_bus=thought_bus)
+        if _fast_payload is not None:
+            _fast_payload = _maybe_attach_javascript_verification(_fast_payload, file_path=file_path)
+            _fast_payload = _record_observability(_fast_payload, file_path=file_path, fast=fast)
+            return _fast_payload
     semantic = _build_semantic_prelude(error_text=error_text, file_path=file_path)
     _t_semantic = perf_counter()
 
@@ -1249,3 +1538,198 @@ def _maybe_execute_repair_plan(plan, file_path: str | None = None):
         return _fast_verify_candidate(plan, file_path=file_path)
 
     return execute_repair_plan(plan, file_path)
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _extract_traceback_frames(error_text: str) -> list[dict[str, Any]]:
+    frames: list[dict[str, Any]] = []
+    text = error_text or ""
+    for m in re.finditer(r'File "([^"]+)", line (\d+)', text):
+        frames.append({
+            "filename": m.group(1),
+            "lineno": int(m.group(2)),
+        })
+    return frames
+
+
+def _fast_engine_supported(error_text: str, file_path: str | None, fast: bool) -> bool:
+    if not fast:
+        return False
+    if not file_path or not str(file_path).endswith(".py"):
+        return False
+    if "FORCED_SEMANTIC_ANALYSIS" in (error_text or ""):
+        return False
+    if _env_truthy("TERMORGANISM_FAST_ENGINE_ALL"):
+        return True
+
+    s = (error_text or "").lower()
+    allow = (
+        "module not found" in s
+        or "modulenotfounderror" in s
+        or "importerror" in s
+        or "cannot import name" in s
+        or "nameerror" in s
+        or "syntaxerror" in s
+        or "indentationerror" in s
+    )
+    deny = (
+        "file not found" in s
+        or "filenotfounderror" in s
+        or "permissionerror" in s
+        or "isadirectoryerror" in s
+    )
+    return allow and not deny
+
+
+def _run_fast_engine_repair(error_text: str, file_path: str, thought_bus=None):
+    from core.modes.fast_repair import FastRepairMode
+
+    _emit_thought(
+        thought_bus,
+        "Fast Engine",
+        "experimental fast engine route selected",
+        kind="info",
+        file_path=file_path,
+    )
+
+    failure_context = {
+        "error_text": error_text,
+        "traceback": _extract_traceback_frames(error_text),
+        "target_file": file_path,
+    }
+
+    try:
+        result = asyncio.run(FastRepairMode().repair(Path(file_path), failure_context))
+    except Exception as exc:
+        _emit_thought(
+            thought_bus,
+            "Fast Engine",
+            f"fast engine failed: {exc}",
+            kind="warn",
+            file_path=file_path,
+        )
+        return None
+
+    if not result or not result.candidate or not result.verification:
+        _emit_thought(
+            thought_bus,
+            "Fast Engine",
+            "no usable fast-engine candidate; falling back",
+            kind="warn",
+            file_path=file_path,
+        )
+        return None
+
+    verification = result.verification or {}
+    branch_result = {
+        "ok": bool(verification.get("ok")),
+        "reason": "fast engine lightweight verification",
+        "applied_files": [file_path],
+        "workspace_root": None,
+        "runtime": verification.get("runtime") or {},
+        "static_verify": verification.get("static_verify") or {},
+        "fast_mode": True,
+    }
+
+    contract_result = synthesize_and_check_contract(
+        before_error_text=error_text,
+        branch_result=branch_result,
+        expected_behavior={"exit_code": 0},
+    )
+
+    candidate = dict(result.candidate)
+    plan_result = {
+        "expert": "fast_engine",
+        "kind": str(candidate.get("kind") or candidate.get("type") or "fast_engine"),
+        "confidence": float(result.confidence or 0.0),
+        "summary": str(candidate.get("summary") or candidate.get("description") or f"Fast engine repair via {result.method}"),
+        "patch": str(candidate.get("patch") or ""),
+        "candidate_code": str(candidate.get("candidate_code") or candidate.get("code") or ""),
+        "file_path_hint": str(file_path),
+        "target_file": str(file_path),
+        "metadata": {
+            "fast_engine": True,
+            "method": result.method,
+            "trace": list(result.trace or []),
+            "cache_key": result.cache_key,
+            "memory_prior": 0.5,
+        },
+        "branch_result": branch_result,
+        "contract_result": contract_result,
+    }
+
+    _emit_thought(
+        thought_bus,
+        "Fast Engine",
+        f"method={result.method} confidence={result.confidence:.2f} latency_ms={result.latency_ms:.1f}",
+        kind="success" if result.success else "warn",
+        confidence=float(result.confidence or 0.0),
+        file_path=file_path,
+    )
+
+    payload = {
+        "result": plan_result,
+        "semantic": {
+            "repro": {
+                "ok": True,
+                "reproduced": False,
+                "returncode": 0 if result.success else 1,
+                "stdout": "",
+                "stderr": error_text,
+                "exception_type": "FastEngineRoute",
+            },
+            "localization": {
+                "count": len(failure_context["traceback"]),
+                "top": failure_context["traceback"][-1] if failure_context["traceback"] else {"file_path": file_path, "reason": "fast-engine target"},
+                "items": failure_context["traceback"],
+            },
+        },
+        "planner": {
+            "candidate_count": 1,
+            "base_plan_count": 1,
+            "multifile_plan_count": 0,
+            "repair_plans": [plan_result],
+            "best_plan": plan_result,
+            "branch_result": branch_result,
+            "contract_result": contract_result,
+            "contract_propagation": {"ok": True, "score": 1.0, "reason": "fast-engine direct path"},
+        },
+        "best_plan": plan_result,
+        "plan_score": float(result.confidence or 0.0),
+        "rank_tuple": (True, float(result.confidence or 0.0)),
+        "branch_result": branch_result,
+        "contract_result": contract_result,
+        "contract_propagation": {"ok": True, "score": 1.0, "reason": "fast-engine direct path"},
+        "routes": ["fast_engine"],
+        "verify": {"ok": bool(result.success), "reason": "fast-engine path selected"},
+        "behavioral_verify": branch_result,
+        "synthesized_tests": contract_result,
+        "sandbox": None,
+        "apply": None,
+        "exec": None,
+        "candidate_count": 1,
+        "candidates": [plan_result],
+        "metrics": {
+            "mode": "fast",
+            "fast": True,
+            "fast_engine": True,
+            "total_ms": round(float(result.latency_ms), 3),
+            "semantic_ms": 0.0,
+            "planning_ms": 0.0,
+            "selection_ms": 0.0,
+        },
+        "confidence": {
+            "score": float(result.confidence or 0.0),
+            "factors": {
+                "static_valid": 1.0 if (verification.get("static_verify") or {}).get("ok") else 0.0,
+                "behavioral_match": 1.0 if (verification.get("runtime") or {}).get("returncode") == 0 else 0.0,
+                "sandbox_pass": 0.6,
+                "cross_file_consistency": 1.0,
+                "memory_prior": 0.5,
+            },
+            "uncertainty": "fast_engine_lightweight_verify",
+            "recommendation": "apply_with_review" if float(result.confidence or 0.0) >= 0.80 else "human_review",
+        },
+    }
+    return payload
