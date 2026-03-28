@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from core.autofix import run_autofix
+from core.salvage.orchestrator import run_salvage
 from core.ui.thoughts import AsyncThoughtBus, build_thought_sink
 
 
@@ -97,6 +98,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="termorganism")
     sub = parser.add_subparsers(dest="command")
 
+    salvage = sub.add_parser("salvage")
+    salvage.add_argument("target")
+    salvage.add_argument("--deep", action="store_true")
+    salvage.add_argument("--out-dir", default=None)
+    salvage.add_argument("--json", action="store_true")
+    salvage.add_argument("--think", action="store_true")
+    salvage.add_argument("--think-tree", action="store_true")
+    salvage.add_argument("--think-cinematic", action="store_true")
+    salvage.add_argument("--think-jsonl", default=None)
+    salvage.add_argument("--think-mode", choices=["off", "linear", "tree", "cinematic", "auto"], default="auto")
+
     doctor = sub.add_parser("doctor")
     doctor.add_argument("--json", action="store_true")
 
@@ -109,7 +121,9 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("--dry-run", action="store_true")
     repair.add_argument("--think", action="store_true")
     repair.add_argument("--think-tree", action="store_true")
+    repair.add_argument("--think-cinematic", action="store_true")
     repair.add_argument("--think-jsonl", default=None)
+    repair.add_argument("--think-mode", choices=["off", "linear", "tree", "cinematic", "auto"], default="auto")
 
     return parser
 
@@ -179,6 +193,50 @@ def _build_runtime_fallback_candidate(target_path: Path) -> tuple[str | None, st
     return (None, None)
 
 
+def _choose_auto_think_mode(target_path: Path, args: argparse.Namespace, error_text: str) -> str:
+    err = (error_text or "").lower()
+    target_s = str(target_path).lower()
+    name = target_path.name.lower()
+
+    if getattr(args, "force_semantic", False):
+        return "cinematic"
+
+    if "cross_file" in target_s or name.startswith("cross_file"):
+        return "cinematic"
+
+    if target_path.suffix == ".txt":
+        return "linear"
+
+    if "modulenotfounderror" in err or "no module named" in err:
+        return "linear"
+
+    if "filenotfounderror" in err or "no such file or directory" in err:
+        return "linear"
+
+    if "command not found" in err or "shell command not found" in err:
+        return "linear"
+
+    if target_path.suffix == ".py":
+        return "linear"
+
+    return "off"
+
+
+def _resolve_think_mode(target_path: Path, args: argparse.Namespace, error_text: str) -> str:
+    if getattr(args, "think_cinematic", False):
+        return "cinematic"
+    if getattr(args, "think_tree", False):
+        return "tree"
+    if getattr(args, "think", False):
+        return "linear"
+
+    mode = getattr(args, "think_mode", "auto") or "auto"
+    if mode != "auto":
+        return mode
+
+    return _choose_auto_think_mode(target_path, args, error_text)
+
+
 def _run_repair(target: str, args: argparse.Namespace) -> int:
     target_path = Path(target).resolve()
 
@@ -219,9 +277,12 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     else:
         error_text = ""
 
+    selected_think_mode = _resolve_think_mode(target_path, args, error_text)
+
     sink = build_thought_sink(
-        enable_live=args.think,
-        enable_tree=args.think_tree,
+        enable_live=(selected_think_mode == "linear"),
+        enable_tree=(selected_think_mode == "tree"),
+        enable_cinematic=(selected_think_mode == "cinematic"),
         jsonl_path=args.think_jsonl,
     )
     bus = AsyncThoughtBus(sink) if sink is not None else None
@@ -301,6 +362,46 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     return 0
 
 
+
+
+def _run_salvage(target: str, args: argparse.Namespace) -> int:
+    target_path = Path(target).resolve()
+    if not target_path.exists():
+        print(f"error: target does not exist: {target_path}", file=sys.stderr)
+        return 2
+
+    selected_think_mode = _resolve_think_mode(target_path, args, "")
+    if (
+        getattr(args, "think_mode", "auto") == "auto"
+        and not getattr(args, "think", False)
+        and not getattr(args, "think_tree", False)
+        and not getattr(args, "think_cinematic", False)
+        and bool(getattr(args, "deep", False))
+    ):
+        selected_think_mode = "cinematic"
+
+    sink = build_thought_sink(
+        enable_live=(selected_think_mode == "linear"),
+        enable_tree=(selected_think_mode == "tree"),
+        enable_cinematic=(selected_think_mode == "cinematic"),
+        jsonl_path=getattr(args, "think_jsonl", None),
+    )
+    bus = AsyncThoughtBus(sink) if sink is not None else None
+
+    try:
+        result = run_salvage(
+            str(target_path),
+            deep=bool(getattr(args, "deep", False)),
+            out_dir=getattr(args, "out_dir", None),
+            thought_bus=bus,
+        )
+    finally:
+        if bus is not None:
+            bus.close()
+
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
 def main() -> int:
 
     parser = build_parser()
@@ -308,6 +409,9 @@ def main() -> int:
 
     if args.command == "doctor":
         return command_doctor(as_json=args.json)
+    if args.command == "salvage":
+        return _run_salvage(args.target, args)
+
 
     if args.command == "repair":
         return _run_repair(args.target, args)
