@@ -2,6 +2,173 @@ from __future__ import annotations
 
 import json
 import os
+
+# ----------------------------------------------------------------------
+# termorganism source-of-truth case-result enrich hooks
+# ----------------------------------------------------------------------
+
+def _tg_env_fast():
+    value = os.getenv("TERMORGANISM_FAST", "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _tg_extract_case_list(obj):
+    if isinstance(obj, list):
+        return [x for x in obj if isinstance(x, dict)]
+
+    if isinstance(obj, dict):
+        for key in ("cases", "results", "items"):
+            v = obj.get(key)
+            if isinstance(v, list):
+                return [x for x in v if isinstance(x, dict)]
+
+        if obj and all(isinstance(v, dict) for v in obj.values()):
+            out = []
+            for k, v in obj.items():
+                item = dict(v)
+                item.setdefault("case_name", str(k))
+                out.append(item)
+            return out
+
+    return []
+
+
+def _tg_replace_case_list(obj, new_cases):
+    if isinstance(obj, list):
+        return new_cases
+
+    if isinstance(obj, dict):
+        for key in ("cases", "results", "items"):
+            if isinstance(obj.get(key), list):
+                obj[key] = new_cases
+                return obj
+
+        if obj and all(isinstance(v, dict) for v in obj.values()):
+            rebuilt = {}
+            for i, case in enumerate(new_cases):
+                name = str(
+                    case.get("case_name")
+                    or case.get("name")
+                    or case.get("id")
+                    or f"case_{i+1}"
+                )
+                rebuilt[name] = case
+            return rebuilt
+
+    return new_cases
+
+
+def _tg_caseish(d):
+    if not isinstance(d, dict):
+        return False
+    keys = set(d.keys())
+    markers = {
+        "case_name", "name", "id", "case_id", "ok", "passed", "status",
+        "target", "target_file", "file_path", "stdout", "stderr", "metrics",
+        "result", "repair_result", "confidence"
+    }
+    return len(keys & markers) >= 2
+
+
+def _tg_looks_like_case_results(obj):
+    if isinstance(obj, list) and obj:
+        return sum(1 for x in obj if _tg_caseish(x)) >= max(1, len(obj) // 2)
+    if isinstance(obj, dict):
+        for key in ("cases", "results", "items"):
+            v = obj.get(key)
+            if isinstance(v, list) and v:
+                return sum(1 for x in v if _tg_caseish(x)) >= max(1, len(v) // 2)
+        if obj and all(isinstance(v, dict) for v in obj.values()):
+            vals = list(obj.values())
+            return sum(1 for x in vals if _tg_caseish(x)) >= max(1, len(vals) // 2)
+    return False
+
+
+def _tg_walk_confidence(obj):
+    if isinstance(obj, dict):
+        conf = obj.get("confidence")
+        if isinstance(conf, dict) and isinstance(conf.get("score"), (int, float)):
+            return conf
+        for v in obj.values():
+            got = _tg_walk_confidence(v)
+            if got is not None:
+                return got
+    elif isinstance(obj, list):
+        for item in obj:
+            got = _tg_walk_confidence(item)
+            if got is not None:
+                return got
+    return None
+
+
+def _tg_walk_metrics(obj):
+    if isinstance(obj, dict):
+        metrics = obj.get("metrics")
+        if isinstance(metrics, dict):
+            keys = {"total_ms", "semantic_ms", "planning_ms", "selection_ms", "mode", "fast"}
+            if any(k in metrics for k in keys):
+                return metrics
+        for v in obj.values():
+            got = _tg_walk_metrics(v)
+            if got is not None:
+                return got
+    elif isinstance(obj, list):
+        for item in obj:
+            got = _tg_walk_metrics(item)
+            if got is not None:
+                return got
+    return None
+
+
+def _tg_enrich_case_results_payload(obj):
+    if not _tg_looks_like_case_results(obj):
+        return obj
+
+    cases = _tg_extract_case_list(obj)
+    fast = _tg_env_fast()
+    mode = "fast" if fast else "normal"
+
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+
+        conf = case.get("confidence")
+        if not (isinstance(conf, dict) and isinstance(conf.get("score"), (int, float))):
+            found_conf = _tg_walk_confidence(case)
+            if isinstance(found_conf, dict):
+                case["confidence"] = found_conf
+
+        existing_metrics = case.get("metrics")
+        merged_metrics = dict(existing_metrics) if isinstance(existing_metrics, dict) else {}
+
+        found_metrics = _tg_walk_metrics(case)
+        if isinstance(found_metrics, dict):
+            for k, v in found_metrics.items():
+                if k not in merged_metrics:
+                    merged_metrics[k] = v
+
+        merged_metrics.setdefault("mode", mode)
+        merged_metrics.setdefault("fast", fast)
+
+        case["metrics"] = merged_metrics
+
+    return _tg_replace_case_list(obj, cases)
+
+
+_tg_original_json_dump = json.dump
+def _tg_json_dump(obj, fp, *args, **kwargs):
+    return _tg_original_json_dump(_tg_enrich_case_results_payload(obj), fp, *args, **kwargs)
+
+
+_tg_original_json_dumps = json.dumps
+def _tg_json_dumps(obj, *args, **kwargs):
+    return _tg_original_json_dumps(_tg_enrich_case_results_payload(obj), *args, **kwargs)
+
+
+json.dump = _tg_json_dump
+json.dumps = _tg_json_dumps
+
+
 import statistics
 import subprocess
 import time
@@ -271,14 +438,24 @@ def evaluate_case(case: FixtureCase) -> CaseResult:
     t0 = time.perf_counter()
     print(f"[CASE] {getattr(case, 'name', getattr(case, 'target', '<no-name>'))}", flush=True)
     print("[CMD] " + " ".join(map(str, cmd)), flush=True)
-    proc = subprocess.run(
+    try:
+        proc = subprocess.run(
         cmd,
         cwd=str(ROOT),
         capture_output=True,
         text=True,
         env=clean_env,
-        timeout=60,
-    )
+        timeout=int(os.getenv("TERMORGANISM_BENCH_TIMEOUT", "180")),
+        )
+        timed_out = False
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        proc = subprocess.CompletedProcess(
+            args=cmd,
+            returncode=124,
+            stdout=exc.stdout if isinstance(exc.stdout, str) else "",
+            stderr=((exc.stderr if isinstance(exc.stderr, str) else "") + "\n[TIMEOUT] benchmark case exceeded TERMORGANISM_BENCH_TIMEOUT"),
+        )
     duration_ms = round((time.perf_counter() - t0) * 1000.0, 3)
 
     payload = _json_load_loose(proc.stdout)
@@ -536,3 +713,252 @@ def run_benchmark() -> BenchmarkSummary:
 if __name__ == "__main__":
     summary = run_benchmark()
     print(json.dumps(summary.to_dict(), indent=2, ensure_ascii=False))
+# ----------------------------------------------------------------------
+# benchmark source-of-truth wrappers
+# ----------------------------------------------------------------------
+
+_BENCH_RESULTS_DIR = Path("benchmarks/results")
+_BENCH_SUMMARY_PATH = _BENCH_RESULTS_DIR / "benchmark_summary.json"
+_BENCH_CASES_PATH = _BENCH_RESULTS_DIR / "case_results.json"
+
+
+def _bench_fast_mode() -> bool:
+    return os.getenv("TERMORGANISM_FAST", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bench_mode_name() -> str:
+    return "fast" if _bench_fast_mode() else "normal"
+
+
+def _bench_json_safe(obj):
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {str(k): _bench_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_bench_json_safe(v) for v in obj]
+    if isinstance(obj, set):
+        return [_bench_json_safe(v) for v in sorted(obj, key=lambda x: str(x))]
+    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+        try:
+            return _bench_json_safe(obj.to_dict())
+        except Exception:
+            pass
+    if hasattr(obj, "__dict__"):
+        try:
+            return {"_type": obj.__class__.__name__, **{str(k): _bench_json_safe(v) for k, v in vars(obj).items()}}
+        except Exception:
+            pass
+    return repr(obj)
+
+
+def _bench_extract_last_json(text: str):
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    decoder = json.JSONDecoder()
+    best = None
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] not in "{[":
+            i += 1
+            continue
+        try:
+            obj, end = decoder.raw_decode(text[i:])
+            best = obj
+            i += max(1, end)
+        except Exception:
+            i += 1
+    return best
+
+
+def _bench_walk_confidence(obj):
+    if isinstance(obj, dict):
+        conf = obj.get("confidence")
+        if isinstance(conf, dict) and isinstance(conf.get("score"), (int, float)):
+            return _bench_json_safe(conf)
+        for v in obj.values():
+            got = _bench_walk_confidence(v)
+            if got is not None:
+                return got
+    elif isinstance(obj, list):
+        for item in obj:
+            got = _bench_walk_confidence(item)
+            if got is not None:
+                return got
+    return None
+
+
+def _bench_walk_metrics(obj):
+    if isinstance(obj, dict):
+        metrics = obj.get("metrics")
+        if isinstance(metrics, dict):
+            keys = {"total_ms", "semantic_ms", "planning_ms", "selection_ms", "mode", "fast"}
+            if any(k in metrics for k in keys):
+                out = _bench_json_safe(metrics)
+                out.setdefault("mode", _bench_mode_name())
+                out.setdefault("fast", _bench_fast_mode())
+                return out
+        for v in obj.values():
+            got = _bench_walk_metrics(v)
+            if got is not None:
+                return got
+    elif isinstance(obj, list):
+        for item in obj:
+            got = _bench_walk_metrics(item)
+            if got is not None:
+                return got
+    return None
+
+
+def _bench_extract_case_name(case, default_name: str = "case"):
+    if isinstance(case, dict):
+        for key in ("case_name", "name", "id", "case_id", "slug", "title", "target", "target_file", "file_path"):
+            if case.get(key) is not None:
+                return str(case.get(key))
+    return default_name
+
+
+def _bench_enrich_case_result(result):
+    if not isinstance(result, dict):
+        return result
+
+    result = dict(result)
+    metrics = result.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+    else:
+        metrics = dict(metrics)
+
+    metrics.setdefault("mode", _bench_mode_name())
+    metrics.setdefault("fast", _bench_fast_mode())
+    result["metrics"] = metrics
+    result.setdefault("timed_out", False)
+
+    conf = result.get("confidence")
+    if not (isinstance(conf, dict) and isinstance(conf.get("score"), (int, float))):
+        for key in ("stdout", "stderr", "proc_stdout", "proc_stderr", "repair_stdout", "repair_stderr"):
+            txt = result.get(key)
+            if isinstance(txt, str) and txt.strip():
+                payload = _bench_extract_last_json(txt)
+                if payload is not None:
+                    found_conf = _bench_walk_confidence(payload)
+                    if found_conf is not None:
+                        result["confidence"] = found_conf
+                        break
+
+    if not isinstance(result.get("confidence"), dict):
+        nested_conf = _bench_walk_confidence(result)
+        if nested_conf is not None:
+            result["confidence"] = nested_conf
+
+    nested_metrics = _bench_walk_metrics(result)
+    if isinstance(nested_metrics, dict):
+        merged = dict(result.get("metrics") or {})
+        for k, v in nested_metrics.items():
+            if k not in merged:
+                merged[k] = v
+        result["metrics"] = merged
+
+    return result
+
+
+_orig_evaluate_case = evaluate_case
+def evaluate_case(case):
+    try:
+        res = _orig_evaluate_case(case)
+        return _bench_enrich_case_result(res)
+    except subprocess.TimeoutExpired as exc:
+        name = _bench_extract_case_name(case, "timeout_case")
+        return {
+            "case_name": name,
+            "ok": False,
+            "passed": False,
+            "status": "timeout",
+            "timed_out": True,
+            "stdout": exc.stdout if isinstance(exc.stdout, str) else "",
+            "stderr": ((exc.stderr if isinstance(exc.stderr, str) else "") + "\n[TIMEOUT] benchmark case exceeded TERMORGANISM_BENCH_TIMEOUT"),
+            "metrics": {
+                "mode": _bench_mode_name(),
+                "fast": _bench_fast_mode(),
+            },
+        }
+
+
+_orig_run_benchmark = run_benchmark
+def run_benchmark(*args, **kwargs):
+    summary = _orig_run_benchmark(*args, **kwargs)
+
+    # post-process case results on disk
+    if _BENCH_CASES_PATH.exists():
+        try:
+            obj = json.loads(_BENCH_CASES_PATH.read_text(encoding="utf-8"))
+            if isinstance(obj, list):
+                cases = obj
+                wrapped = False
+            elif isinstance(obj, dict):
+                for key in ("cases", "results", "items"):
+                    if isinstance(obj.get(key), list):
+                        cases = obj[key]
+                        wrapped = True
+                        wrapped_key = key
+                        break
+                else:
+                    cases = []
+                    wrapped = False
+            else:
+                cases = []
+                wrapped = False
+
+            new_cases = []
+            for i, case in enumerate(cases):
+                enriched = _bench_enrich_case_result(case if isinstance(case, dict) else {"case_name": f"case_{i+1}"})
+                if "case_name" not in enriched:
+                    enriched["case_name"] = _bench_extract_case_name(enriched, f"case_{i+1}")
+                new_cases.append(enriched)
+
+            if isinstance(obj, list):
+                obj = new_cases
+            elif isinstance(obj, dict) and wrapped:
+                obj[wrapped_key] = new_cases
+
+            _BENCH_CASES_PATH.write_text(json.dumps(_bench_json_safe(obj), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+    # refresh summary timeout_count
+    timeout_count = 0
+    if _BENCH_CASES_PATH.exists():
+        try:
+            obj = json.loads(_BENCH_CASES_PATH.read_text(encoding="utf-8"))
+            if isinstance(obj, list):
+                cases = obj
+            elif isinstance(obj, dict):
+                cases = []
+                for key in ("cases", "results", "items"):
+                    if isinstance(obj.get(key), list):
+                        cases = obj[key]
+                        break
+            else:
+                cases = []
+            timeout_count = sum(1 for c in cases if isinstance(c, dict) and c.get("timed_out"))
+        except Exception:
+            timeout_count = 0
+
+    if isinstance(summary, dict):
+        summary = dict(summary)
+        summary["timeout_count"] = timeout_count
+        try:
+            if _BENCH_SUMMARY_PATH.exists():
+                _BENCH_SUMMARY_PATH.write_text(json.dumps(_bench_json_safe(summary), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+    return summary

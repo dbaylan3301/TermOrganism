@@ -14,7 +14,7 @@ from typing import Any
 class ThoughtEvent:
     phase: str
     message: str
-    kind: str = "info"  # info, warn, success, fail
+    kind: str = "info"
     confidence: float | None = None
     file_path: str | None = None
     line_no: int | None = None
@@ -106,11 +106,18 @@ class AsyncThoughtBus:
 def build_thought_sink(
     enable_live: bool = False,
     enable_tree: bool = False,
+    enable_cinematic: bool = False,
     jsonl_path: str | None = None,
 ) -> ThoughtSink | None:
     sinks: list[ThoughtSink] = []
 
-    if enable_tree:
+    if enable_cinematic:
+        try:
+            from core.ui.rich_sink import RichCinematicTreeThoughtSink
+            sinks.append(RichCinematicTreeThoughtSink())
+        except Exception as exc:
+            print(f"[termorganism] --think-cinematic disabled: {exc}", file=sys.stderr)
+    elif enable_tree:
         try:
             from core.ui.rich_sink import RichTreeThoughtSink
             sinks.append(RichTreeThoughtSink())

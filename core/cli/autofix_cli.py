@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import platform
@@ -9,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from core.autofix import run_autofix
+from core.autofix import run_autofix, finalize_repair_payload
 from core.salvage.orchestrator import run_salvage
 from core.ui.thoughts import AsyncThoughtBus, build_thought_sink
 
@@ -108,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     salvage.add_argument("--think-cinematic", action="store_true")
     salvage.add_argument("--think-jsonl", default=None)
     salvage.add_argument("--think-mode", choices=["off", "linear", "tree", "cinematic", "auto"], default="auto")
+    salvage.add_argument("--fast", action="store_true")
 
     doctor = sub.add_parser("doctor")
     doctor.add_argument("--json", action="store_true")
@@ -124,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("--think-cinematic", action="store_true")
     repair.add_argument("--think-jsonl", default=None)
     repair.add_argument("--think-mode", choices=["off", "linear", "tree", "cinematic", "auto"], default="auto")
+    repair.add_argument("--fast", action="store_true")
 
     return parser
 
@@ -237,6 +240,66 @@ def _resolve_think_mode(target_path: Path, args: argparse.Namespace, error_text:
     return _choose_auto_think_mode(target_path, args, error_text)
 
 
+
+
+def _json_safe(obj):
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+
+    if isinstance(obj, Path):
+        return str(obj)
+
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+
+    if isinstance(obj, set):
+        return [_json_safe(v) for v in sorted(obj, key=lambda x: str(x))]
+
+    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+        try:
+            return _json_safe(obj.to_dict())
+        except Exception:
+            pass
+
+    if hasattr(obj, "__dict__"):
+        try:
+            return {
+                "_type": obj.__class__.__name__,
+                **{str(k): _json_safe(v) for k, v in vars(obj).items()}
+            }
+        except Exception:
+            pass
+
+    return repr(obj)
+
+
+def _dump_json(payload):
+    print(json.dumps(_json_safe(payload), indent=2, ensure_ascii=False))
+
+
+
+def _env_truthy(name: str) -> bool:
+    value = os.getenv(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _fast_requested(args) -> bool:
+    return bool(getattr(args, "fast", False) or _env_truthy("TERMORGANISM_FAST"))
+
+
+def _call_run_autofix_compat(*, fast: bool = False, **kwargs):
+    try:
+        params = inspect.signature(run_autofix).parameters
+    except Exception:
+        params = {}
+    if "fast" in params:
+        return run_autofix(fast=fast, **kwargs)
+    return run_autofix(**kwargs)
+
+
 def _run_repair(target: str, args: argparse.Namespace) -> int:
     target_path = Path(target).resolve()
 
@@ -288,7 +351,7 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     bus = AsyncThoughtBus(sink) if sink is not None else None
 
     try:
-        result = run_autofix(
+        result = _call_run_autofix_compat(fast=_fast_requested(args), 
             error_text=error_text,
             file_path=str(target_path),
             auto_apply=args.auto_apply,
@@ -299,6 +362,7 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     finally:
         if bus is not None:
             bus.close()
+    result = finalize_repair_payload(result, fast=_fast_requested(args))
 
     if isinstance(result, dict):
         behavioral = result.get("behavioral_verify")
@@ -355,10 +419,10 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
                         rr["file_path_hint"] = str(target_path)
 
     if args.json:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        _dump_json(result)
         return 0
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    _dump_json(result)
     return 0
 
 
@@ -399,7 +463,7 @@ def _run_salvage(target: str, args: argparse.Namespace) -> int:
         if bus is not None:
             bus.close()
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    _dump_json(result)
     return 0
 
 def main() -> int:
