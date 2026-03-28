@@ -290,6 +290,94 @@ def _fast_requested(args) -> bool:
     return bool(getattr(args, "fast", False) or _env_truthy("TERMORGANISM_FAST"))
 
 
+
+
+def _sync_hot_cache_confidence(result: dict) -> dict:
+    if not isinstance(result, dict):
+        return result
+
+    memory = result.get("memory") or {}
+    hot = memory.get("hot_cache") if isinstance(memory, dict) else None
+    if not isinstance(hot, dict):
+        return result
+
+    verify_ok = bool((result.get("verify") or {}).get("ok"))
+    if not verify_ok:
+        return result
+
+    conf = result.get("confidence") or {}
+    if not isinstance(conf, dict):
+        conf = {}
+        result["confidence"] = conf
+
+    base_score = float(
+        conf.get("score", 0.0)
+        or ((result.get("result") or {}).get("confidence") if isinstance(result.get("result"), dict) else 0.0)
+        or ((result.get("best_plan") or {}).get("confidence") if isinstance(result.get("best_plan"), dict) else 0.0)
+        or 0.0
+    )
+
+    hot_score = float(hot.get("confidence", base_score) or base_score)
+    boosted = max(base_score, hot_score)
+
+    conf["score"] = boosted
+    conf.setdefault("factors", {})
+    conf["factors"]["hot_cache"] = boosted - base_score
+
+    if hot.get("recommendation") == "auto_apply":
+        conf["recommendation"] = "auto_apply"
+
+    return result
+
+
+
+def _force_hot_cache_output_confidence(result: dict) -> dict:
+    if not isinstance(result, dict):
+        return result
+
+    memory = result.get("memory") or {}
+    hot = memory.get("hot_cache") if isinstance(memory, dict) else None
+    if not isinstance(hot, dict):
+        return result
+
+    conf = result.get("confidence") or {}
+    if not isinstance(conf, dict):
+        conf = {}
+        result["confidence"] = conf
+
+    # başarı sinyalini geniş yorumla
+    verify_ok = bool((result.get("verify") or {}).get("ok"))
+    branch_ok = bool(((result.get("branch_result") or {}).get("ok")))
+    behavioral_ok = bool(((result.get("behavioral_verify") or {}).get("ok")))
+    contract_ok = bool(((result.get("contract_result") or {}).get("ok")))
+
+    success = verify_ok or branch_ok or behavioral_ok or contract_ok
+    if not success:
+        return result
+
+    result_obj = result.get("result") or {}
+    best_plan = result.get("best_plan") or {}
+
+    base_score = float(
+        conf.get("score", 0.0)
+        or (result_obj.get("confidence") if isinstance(result_obj, dict) else 0.0)
+        or (best_plan.get("confidence") if isinstance(best_plan, dict) else 0.0)
+        or 0.0
+    )
+
+    hot_score = float(hot.get("confidence", base_score) or base_score)
+    boosted = max(base_score, hot_score)
+
+    conf["score"] = boosted
+    conf.setdefault("factors", {})
+    conf["factors"]["hot_cache"] = boosted - base_score
+
+    if hot.get("recommendation") == "auto_apply":
+        conf["recommendation"] = "auto_apply"
+
+    return result
+
+
 def _call_run_autofix_compat(*, fast: bool = False, **kwargs):
     try:
         params = inspect.signature(run_autofix).parameters
@@ -424,6 +512,7 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
                         rr["target_file"] = str(target_path)
                         rr["file_path_hint"] = str(target_path)
 
+    result = _force_hot_cache_output_confidence(result)
     if args.json:
         _dump_json(result)
         return 0

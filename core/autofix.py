@@ -130,6 +130,11 @@ from core.verify.contract_synth import synthesize_and_check_contract
 from core.verify.contract_propagation import check_contract_propagation
 from core.verify.javascript_verify import is_javascript_path, verify_javascript_candidate
 from core.observability import get_repair_metrics, emit_repair_trace
+from core.semantic.partial_parser import PartialCrossFileAnalyzer
+from core.memory.hot_cache import boost_confidence
+from core.modes.fast_repair_v2 import HardenedFastRepair, FallbackToSlowMode
+
+_FAST_V2_LAST_MISS_REASON = None
 from core.ranker.plan_ranker import rank_plans
 from core.planner.plan_normalizer import plan_to_candidate
 from core.planner.plan_apply import apply_plan
@@ -556,6 +561,168 @@ def _record_observability(payload: dict[str, Any], *, file_path: str | None, fas
     return payload
 
 
+
+
+def _fast_v2_enabled() -> bool:
+    return os.getenv("TERMORGANISM_FAST_V2", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _run_fast_v2_payload(error_text: str, file_path: str | None):
+    global _FAST_V2_LAST_MISS_REASON
+    _FAST_V2_LAST_MISS_REASON = None
+
+    if not file_path:
+        _FAST_V2_LAST_MISS_REASON = "no_file_path"
+        return None
+
+    try:
+        from core.modes.fast_repair_v2 import HardenedFastRepair
+    except Exception:
+        _FAST_V2_LAST_MISS_REASON = "import_fast_v2_failed"
+        return None
+
+    frames = []
+    if "_extract_traceback_frames" in globals():
+        try:
+            frames = _extract_traceback_frames(error_text)
+        except Exception:
+            frames = []
+
+    context = {
+        "error_text": error_text,
+        "traceback": frames,
+        "type": _memory_extract_error_type(error_text, None) if "_memory_extract_error_type" in globals() else "UnknownError",
+    }
+
+    try:
+        result = asyncio.run(HardenedFastRepair().repair(Path(file_path), context))
+    except FallbackToSlowMode as exc:
+        _FAST_V2_LAST_MISS_REASON = str(exc)
+        return None
+    except Exception as exc:
+        _FAST_V2_LAST_MISS_REASON = f"fast_v2_exception:{type(exc).__name__}"
+        return None
+
+    candidate = dict(result.candidate or {})
+    verification = dict(result.verification or {})
+
+    branch_result = {
+        "ok": bool(verification.get("ok", result.success)),
+        "reason": "fast_v2 verification",
+        "applied_files": [str(file_path)],
+        "workspace_root": None,
+        "runtime": verification,
+        "static_verify": verification.get("static_verify"),
+        "fast_mode_v2": True,
+    }
+
+    payload = {
+        "result": {
+            "expert": "fast_v2",
+            "kind": str(candidate.get("kind") or "fast_v2"),
+            "summary": str(candidate.get("summary") or "fast_v2 candidate"),
+            "candidate_code": str(candidate.get("candidate_code") or ""),
+            "target_file": str(file_path),
+            "file_path_hint": str(file_path),
+            "confidence": float(result.confidence or 0.0),
+            "metadata": {
+                "fast_v2": True,
+                "method": result.method,
+                "trace": list(result.trace or []),
+            },
+            "branch_result": branch_result,
+            "contract_result": {"ok": bool(result.success), "score": float(result.confidence or 0.0)},
+        },
+        "verify": {"ok": bool(result.success), "reason": "fast_v2 path selected"},
+        "behavioral_verify": branch_result,
+        "contract_result": {"ok": bool(result.success), "score": float(result.confidence or 0.0)},
+        "routes": ["fast_v2"],
+        "metrics": {
+            "mode": "fast_v2",
+            "fast": True,
+            "total_ms": float(result.latency_ms or 0.0),
+            "semantic_ms": 0.0,
+            "planning_ms": 0.0,
+            "selection_ms": 0.0,
+        },
+        "confidence": {
+            "score": float(result.confidence or 0.0),
+            "factors": {
+                "memory_prior": 0.5 if result.method == "memory_hit" else 0.0,
+                "pool_verify": 1.0 if result.method == "pool_verify" else 0.0,
+            },
+            "uncertainty": "fast_v2_candidate",
+            "recommendation": "apply_with_review" if float(result.confidence or 0.0) >= 0.8 else "human_review",
+        },
+        "fast_v2": {
+            "miss_reason": None,
+            "used": True,
+        },
+    }
+    return payload
+
+def _attach_hot_cache_boost(payload: dict[str, Any], *, error_text: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    base_score = float(((payload.get("confidence") or {}).get("score")) or 0.0)
+    hot = boost_confidence(base_score, error_text)
+
+    payload.setdefault("memory", {})
+    payload["memory"]["hot_cache"] = hot
+
+    # güvenli davranış: verify ok değilse confidence yükseltme yapma
+    verify_ok = bool((payload.get("verify") or {}).get("ok"))
+    conf = payload.get("confidence") or {}
+    if verify_ok and isinstance(conf, dict):
+        old_score = float(conf.get("score", 0.0) or 0.0)
+        new_score = max(old_score, float(hot.get("confidence", old_score) or old_score))
+        conf["score"] = new_score
+        conf.setdefault("factors", {})
+        conf["factors"]["hot_cache"] = new_score - old_score
+        if hot.get("recommendation") == "auto_apply":
+            conf["recommendation"] = "auto_apply"
+
+    return payload
+
+
+
+
+def _apply_hot_cache_to_payload(payload: dict[str, Any], *, error_text: str) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    payload.setdefault("memory", {})
+    conf = payload.get("confidence") or {}
+    if not isinstance(conf, dict):
+        conf = {}
+        payload["confidence"] = conf
+
+    result = payload.get("result") or {}
+    best_plan = payload.get("best_plan") or {}
+
+    base_score = float(
+        conf.get("score", 0.0)
+        or (result.get("confidence") if isinstance(result, dict) else 0.0)
+        or (best_plan.get("confidence") if isinstance(best_plan, dict) else 0.0)
+        or 0.0
+    )
+
+    hot = boost_confidence(base_score, error_text)
+    payload["memory"]["hot_cache"] = hot
+
+    verify_ok = bool((payload.get("verify") or {}).get("ok"))
+    if verify_ok:
+        boosted = max(base_score, float(hot.get("confidence", base_score) or base_score))
+        conf["score"] = boosted
+        conf.setdefault("factors", {})
+        conf["factors"]["hot_cache"] = boosted - base_score
+        if hot.get("recommendation") == "auto_apply":
+            conf["recommendation"] = "auto_apply"
+
+    return payload
+
+
 class EventStoreAdapter:
     def append_event(self, payload: dict[str, Any]) -> None:
         if hasattr(event_store, "append_event"):
@@ -877,6 +1044,17 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         kind="info",
     )
 
+    if _fast_v2_enabled() and bool(fast):
+        _fast_v2_payload = _run_fast_v2_payload(error_text=error_text, file_path=file_path)
+        if _fast_v2_payload is not None:
+            _fast_v2_payload = _memory_enrich_payload(_fast_v2_payload, error_text=error_text, file_path=file_path, semantic=None)
+            _fast_v2_payload = _attach_hot_cache_boost(_fast_v2_payload, error_text=error_text)
+            _fast_v2_payload = _maybe_attach_javascript_verification(_fast_v2_payload, file_path=file_path)
+            _fast_v2_payload = _record_observability(_fast_v2_payload, file_path=file_path, fast=True)
+            if bool((_fast_v2_payload.get("verify") or {}).get("ok")):
+                _fast_v2_payload = _apply_hot_cache_to_payload(_fast_v2_payload, error_text=error_text)
+                return finalize_repair_payload(_fast_v2_payload, fast=True)
+
     if _fast_engine_supported(error_text=error_text, file_path=file_path, fast=fast):
         _fast_payload = _run_fast_engine_repair(error_text=error_text, file_path=str(file_path), thought_bus=thought_bus)
         if _fast_payload is not None:
@@ -884,6 +1062,17 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
             _fast_payload = _record_observability(_fast_payload, file_path=file_path, fast=fast)
             return _fast_payload
     semantic = _build_semantic_prelude(error_text=error_text, file_path=file_path)
+    try:
+        partial = None
+        if file_path and str(file_path).endswith(".py"):
+            loc = (semantic or {}).get("localization") or {}
+            top = loc.get("top") or {}
+            provider_hint = top.get("file_path") if isinstance(top, dict) else None
+            partial = PartialCrossFileAnalyzer().analyze_cross_file(Path(file_path), provider_hint=provider_hint)
+        if partial:
+            semantic["partial_cross_file"] = partial
+    except Exception:
+        pass
     _t_semantic = perf_counter()
 
     repro = (semantic or {}).get("repro") or {}
@@ -1059,7 +1248,7 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         )
 
 
-    return {
+    _final_payload = {
         "result": plan_result,
         "semantic": semantic,
         "planner": planner,
@@ -1080,6 +1269,8 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
         "candidate_count": 1 if plan_result else 0,
         "candidates": [plan_result] if plan_result else [],
     }
+    _final_payload = _apply_hot_cache_to_payload(_final_payload, error_text=error_text)
+    return finalize_repair_payload(_final_payload, fast=bool(fast))
 
 def _clamp01(value) -> float:
     try:
@@ -1129,6 +1320,16 @@ def _extract_memory_prior_from_payload(payload: dict) -> float:
 
 
 def finalize_repair_payload(payload: dict, fast: bool = False) -> dict:
+    try:
+        if _FAST_V2_LAST_MISS_REASON:
+            payload.setdefault("fast_v2", {})
+            payload["fast_v2"]["used"] = False
+            payload["fast_v2"]["miss_reason"] = _FAST_V2_LAST_MISS_REASON
+    except Exception:
+        pass
+
+
+    error_text = str(payload.get("error_text") or "")
     if not isinstance(payload, dict):
         return payload
 
