@@ -76,6 +76,15 @@ Shows provider/caller-aware repair under `--force-semantic`.
 
 Shows the benchmark harness running on the bundled fixture suite.
 
+### Fast mode benchmark snapshot
+
+| Mode | Passed | Median ms | Mean ms |
+|---|---:|---:|---:|
+| normal | 20 / 20 | 16286.922 | 22946.349 |
+| fast | 20 / 20 | 11484.475 | 15586.241 |
+
+`--fast` preserves correctness on the current 20-case suite while reducing median latency by ~29.5% and mean latency by ~32.1%.
+
 
 What it returns
 The salvage flow writes a bundle containing:
