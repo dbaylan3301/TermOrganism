@@ -21,6 +21,30 @@
 ### Benchmark proof: 20 / 20
 [![asciicast](https://asciinema.org/a/LZcTG3jv2u6N0bAF.svg)](https://asciinema.org/a/LZcTG3jv2u6N0bAF)
 
+## Salvage demo
+
+### Large-script salvage with fallback repair
+[![asciicast](https://asciinema.org/a/LcDu2e63ku7YEti4.svg)](https://asciinema.org/a/LcDu2e63ku7YEti4)
+
+TermOrganism can now run a salvage pipeline for heavily broken Python scripts.
+
+It performs:
+
+- structure scan
+- syntax recovery
+- symbol recovery
+- intent inference
+- dependency inference
+- initial verification
+- targeted fallback repair
+- final verification
+- bundle export
+
+### Example
+
+```bash
+termorganism salvage demo/broken_runtime.py --deep --json --think-cinematic
+
 
 **Semantic self-healing terminal runtime with sandbox-verified repair, cross-file reasoning, and live think-tree traces.**
 
@@ -53,7 +77,19 @@ Shows provider/caller-aware repair under `--force-semantic`.
 Shows the benchmark harness running on the bundled fixture suite.
 
 
-
+What it returns
+The salvage flow writes a bundle containing:
+repaired Python file
+inferred requirements
+salvage report JSON
+unified diff patch
+Why it matters
+This moves TermOrganism beyond simple one-shot repair.
+Instead of stopping at “the script is broken,” it can now:
+reconstruct damaged code structure
+classify whether the result is only compile-valid or fully runnable
+invoke a targeted repair expert when salvage alone is not enough
+re-verify the final result before delivery
 ---
 
 ## Proof at a glance
