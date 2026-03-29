@@ -215,10 +215,7 @@ class TermOrganismDaemon:
             "signature": signature,
             "strategy": strategy,
             "target_file": str(file_path),
-            "verify": {
-                "ok": True,
-                "reason": verify_reason,
-            },
+            "verify": {"ok": True, "reason": verify_reason},
             "confidence": {
                 "score": confidence,
                 "factors": {
@@ -269,9 +266,7 @@ class TermOrganismDaemon:
             code_lines = []
             for line in raw_lines:
                 stripped = line.strip()
-                if not stripped:
-                    continue
-                if stripped.startswith("#"):
+                if not stripped or stripped.startswith("#"):
                     continue
                 code_lines.append(stripped)
 
@@ -279,7 +274,6 @@ class TermOrganismDaemon:
                 return None
 
             stmt = code_lines[0]
-
             m_import = re.fullmatch(r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
             m_from = re.fullmatch(r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
 
