@@ -1,137 +1,183 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import json
 import os
 import socket
+import subprocess
 import sys
 from pathlib import Path
-import re
 
 
-def _json_requested(argv):
-    return "--json" in argv
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _target_from_argv(argv):
-    if len(argv) >= 3 and argv[1] == "repair":
-        return argv[2]
-    return None
+def _usage() -> int:
+    print(json.dumps({
+        "success": False,
+        "error": (
+            "Usage: ./termorganism repair <file> [--json] [--fast] "
+            "[--git-branch] [--git-undo] [--git-commit] "
+            "[--git-branch-name=name] [--git-commit-message=msg] | "
+            "./termorganism undo <file-or-path> --undo-ref=<ref> | "
+            "./termorganism plugins list|enable <name>|disable <name>"
+        )
+    }))
+    return 1
 
 
-def _mode_from_env(argv):
-    if os.getenv("TERMORGANISM_HOT_FORCE", "").strip().lower() in {"1", "true", "yes", "on"}:
+def _mode_from_env(argv: list[str]) -> str:
+    if _truthy(os.getenv("TERMORGANISM_HOT_FORCE")):
         return "hot_force"
-    if os.getenv("TERMORGANISM_FAST_V2", "").strip().lower() in {"1", "true", "yes", "on"}:
+    if _truthy(os.getenv("TERMORGANISM_FAST_V2")):
         return "fast_v2"
     if "--fast" in argv:
         return "fast"
     return "auto"
 
 
-def _minimal_context(file_path: str) -> dict:
-    p = Path(file_path)
-    if not p.exists():
-        return {"error": "file_not_found", "file": file_path}
+def _socket_path() -> str:
+    return os.getenv("TERMORGANISM_SOCKET", "/tmp/termorganism.sock")
 
+
+def _client_timeout() -> float:
     try:
-        with p.open("r", encoding="utf-8", errors="ignore") as f:
-            content = f.read(4096)
-    except Exception as e:
-        return {"error_type": type(e).__name__, "file": file_path}
-
-    if "open(" in content and ".read()" in content:
-        return {"file": file_path, "hint": "filenotfounderror", "signature": "filenotfounderror:open:runtime"}
-
-    if "read_text(" in content:
-        return {"file": file_path, "hint": "filenotfounderror", "signature": "filenotfounderror:open:runtime"}
-
-    if re.search(r'(?m)^\s*import\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?\s*$', content):
-        return {"file": file_path, "hint": "importerror", "signature": "importerror:no_module_named"}
-
-    if re.search(r'(?m)^\s*from\s+[A-Za-z_][A-Za-z0-9_\.]*\s+import\s+[A-Za-z_][A-Za-z0-9_]*\s*$', content):
-        return {"file": file_path, "hint": "importerror", "signature": "importerror:no_module_named"}
-
-    return {"file": file_path, "hint": "unknown"}
+        return float(os.getenv("TERMORGANISM_CLIENT_TIMEOUT", "5"))
+    except Exception:
+        return 5.0
 
 
-def _send_to_daemon(payload: dict, socket_path: str = "/tmp/termorganism.sock") -> dict:
+def _send_to_daemon(payload: dict, socket_path: str) -> dict:
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    timeout_sec = float(os.getenv("TERMORGANISM_CLIENT_TIMEOUT", "30"))
-    sock.settimeout(timeout_sec)
+    sock.settimeout(_client_timeout())
     try:
         sock.connect(socket_path)
         sock.sendall(json.dumps(payload).encode("utf-8"))
         sock.shutdown(socket.SHUT_WR)
-
-        response = b""
+        buf = b""
         while True:
             chunk = sock.recv(65536)
             if not chunk:
                 break
-            response += chunk
-
-        if not response:
-            return {"success": False, "error": "empty daemon response", "mode": "daemon_client"}
-
-        return json.loads(response.decode("utf-8"))
+            buf += chunk
     finally:
         sock.close()
 
-
-def _daemon_available(socket_path: Path) -> bool:
-    return socket_path.exists() and os.getenv("TERMORGANISM_USE_DAEMON", "1") == "1"
-
-
-def _exit_code_from_result(result: dict) -> int:
-    if bool(result.get("success")):
-        return 0
-    if bool((result.get("verify") or {}).get("ok")):
-        return 0
-    return 1
+    if not buf:
+        return {"success": False, "error": "empty daemon response"}
+    return json.loads(buf.decode("utf-8"))
 
 
-def _run_daemon(argv) -> int | None:
-    socket_path = Path("/tmp/termorganism.sock")
-    if not _daemon_available(socket_path):
-        return None
+def _daemon_available() -> bool:
+    return Path(_socket_path()).exists()
 
-    target = _target_from_argv(argv)
-    if not target:
-        return None
+
+def _run_plugins(argv: list[str]) -> int:
+    proc = subprocess.run(
+        [sys.executable, "-m", "core.plugins.cli", *argv[2:]],
+        text=True,
+    )
+    return proc.returncode
+
+
+def _extract_flag_value(argv: list[str], prefix: str) -> str:
+    for arg in argv:
+        if arg.startswith(prefix):
+            return arg.split("=", 1)[1]
+    return ""
+
+
+def _build_repair_payload(argv: list[str], target: str, mode: str) -> dict:
+    payload = {
+        "command": "repair",
+        "file": target,
+        "mode": mode,
+        "context": {
+            "file": target,
+            "hint": "python_cli",
+        },
+    }
+
+    if "--git-branch" in argv:
+        payload["git_branch"] = True
+    if "--git-undo" in argv:
+        payload["git_undo"] = True
+    if "--git-commit" in argv:
+        payload["git_commit"] = True
+
+    branch_name = _extract_flag_value(argv, "--git-branch-name=")
+    if branch_name:
+        payload["git_branch_name"] = branch_name
+
+    commit_message = _extract_flag_value(argv, "--git-commit-message=")
+    if commit_message:
+        payload["git_commit_message"] = commit_message
+
+    return payload
+
+
+def _run_undo(argv: list[str]) -> int:
+    if len(argv) < 3:
+        return _usage()
+
+    target = argv[2]
+    undo_ref = _extract_flag_value(argv, "--undo-ref=")
+    if not undo_ref:
+        print(json.dumps({"success": False, "error": "missing --undo-ref=<ref>"}))
+        return 1
+
+    if not _daemon_available():
+        print(json.dumps({"success": False, "mode": "python_cli", "error": f"daemon socket not found: {_socket_path()}"}))
+        return 1
+
+    result = _send_to_daemon(
+        {
+            "command": "undo",
+            "file": target,
+            "undo_ref": undo_ref,
+        },
+        socket_path=_socket_path(),
+    )
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("success") else 1
+
+
+def _run_repair(argv: list[str]) -> int:
+    if len(argv) < 3:
+        return _usage()
+
+    target = argv[2]
+    if not Path(target).exists():
+        print(json.dumps({"success": False, "mode": "python_cli", "error": f"target does not exist: {target}"}))
+        return 1
+
+    if not _daemon_available():
+        print(json.dumps({"success": False, "mode": "python_cli", "error": f"daemon socket not found: {_socket_path()}"}))
+        return 1
 
     mode = _mode_from_env(argv)
-    context = _minimal_context(target)
-
-    if mode == "hot_force" and context.get("signature"):
-        payload = {
-            "fast_path": "hot_force",
-            "file": target,
-            "signature": context["signature"],
-            "mode": "hot_force",
-        }
-    else:
-        payload = {
-            "file": target,
-            "context": context,
-            "mode": mode,
-        }
-
-    result = _send_to_daemon(payload, socket_path=str(socket_path))
-
-    if "--json" in argv:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-    else:
-        print(json.dumps(result, ensure_ascii=False))
-
-    return _exit_code_from_result(result)
+    payload = _build_repair_payload(argv, target, mode)
+    result = _send_to_daemon(payload, socket_path=_socket_path())
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result.get("success") else 1
 
 
-def main():
-    daemon_rc = _run_daemon(sys.argv)
-    if daemon_rc is not None:
-        return daemon_rc
+def main() -> int:
+    argv = sys.argv
+    if len(argv) < 2:
+        return _usage()
 
-    from core.cli.autofix_cli import main as slow_main
-    return slow_main()
+    cmd = argv[1]
+
+    if cmd == "plugins":
+        return _run_plugins(argv)
+    if cmd == "undo":
+        return _run_undo(argv)
+    if cmd == "repair":
+        return _run_repair(argv)
+
+    return _usage()
 
 
 if __name__ == "__main__":
