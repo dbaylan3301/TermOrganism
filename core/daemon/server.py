@@ -95,7 +95,6 @@ class TermOrganismDaemon:
             f"after_verify={len(self.plugins.enabled_hook_commands('after_verify'))}",
             file=sys.stderr,
         )
-
     async def _ensure_workspace_pool(self):
         if self._workspace_pool_ready:
             return
