@@ -9,6 +9,12 @@ from typing import Any
 
 from core.repro.harness import run_python_file
 
+try:
+    from core.orchestrator_hot_force_patterns import HOT_REPAIRS as GENERATED_HOT_REPAIRS
+except Exception:
+    GENERATED_HOT_REPAIRS = {}
+
+
 
 class HotCacheForcePath:
     """
@@ -21,7 +27,8 @@ class HotCacheForcePath:
             "code": 'from pathlib import Path\n\nlog_path = Path("logs/app.log")\nif log_path.exists():\n    print(log_path.read_text())\nelse:\n    print("")\n',
             "strategy": "guard_exists",
             "confidence": 0.97,
-        }
+        },
+        **(GENERATED_HOT_REPAIRS or {}),
     }
 
     def build_context(self, target: Path) -> dict[str, Any]:
