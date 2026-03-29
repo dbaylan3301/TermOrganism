@@ -13,6 +13,7 @@ class PluginManifest:
     skills: list[str] = field(default_factory=list)
     agents: list[str] = field(default_factory=list)
     hooks: list[str] = field(default_factory=list)
+    hook_commands: dict[str, list[str]] = field(default_factory=dict)
     enabled_by_default: bool = False
     root_dir: str = ""
 
@@ -21,4 +22,5 @@ class PluginManifest:
         p = Path(path)
         data = json.loads(p.read_text(encoding="utf-8"))
         data.setdefault("root_dir", str(p.parent))
+        data.setdefault("hook_commands", {})
         return cls(**data)

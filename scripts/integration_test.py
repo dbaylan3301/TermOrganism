@@ -96,6 +96,26 @@ def require_plugin_name(data: dict, expected: str):
         raise AssertionError(f"plugin {expected!r} not found in {names!r}")
 
 
+def require_hook_annotations(data: dict):
+    before_hooks = data.get("before_repair_hooks")
+    after_hooks = data.get("after_verify_hooks")
+
+    if not isinstance(before_hooks, list) or len(before_hooks) == 0:
+        raise AssertionError(f"before_repair_hooks expected non-empty list actual={before_hooks!r}")
+    if not isinstance(after_hooks, list) or len(after_hooks) == 0:
+        raise AssertionError(f"after_verify_hooks expected non-empty list actual={after_hooks!r}")
+
+    if before_hooks[0].get("action") != "annotate":
+        raise AssertionError(f"before_repair_hooks first action expected annotate actual={before_hooks[0]!r}")
+    if after_hooks[0].get("action") != "annotate":
+        raise AssertionError(f"after_verify_hooks first action expected annotate actual={after_hooks[0]!r}")
+
+    if before_hooks[0].get("source") != "python-hotfix":
+        raise AssertionError(f"unexpected before hook source: {before_hooks[0]!r}")
+    if after_hooks[0].get("source") != "python-hotfix":
+        raise AssertionError(f"unexpected after hook source: {after_hooks[0]!r}")
+
+
 def run_test(name: str, cmd: str, checker):
     print(f"\n{'='*60}")
     print(name)
@@ -119,7 +139,7 @@ def run_test(name: str, cmd: str, checker):
         checker(data)
     except Exception as e:
         print("FAIL:", e)
-        print(json.dumps(data, indent=2, ensure_ascii=False)[:1600])
+        print(json.dumps(data, indent=2, ensure_ascii=False)[:1800])
         return False
 
     print(f"PASS in {elapsed:.1f}ms")
@@ -141,6 +161,7 @@ def check_hot_force_runtime(data: dict):
     require(data, ["verify", "ok"], True)
     require(data, ["workspace_pool", "source"], "pool")
     require(data, ["fallback_chain"], ["hot_force"])
+    require_hook_annotations(data)
 
 
 def check_hot_force_import(data: dict):
@@ -151,6 +172,7 @@ def check_hot_force_import(data: dict):
     require(data, ["verify", "ok"], True)
     require(data, ["workspace_pool", "source"], "pool")
     require(data, ["fallback_chain"], ["hot_force"])
+    require_hook_annotations(data)
 
 
 def check_fallback_fast_shortcut(data: dict):
@@ -162,6 +184,7 @@ def check_fallback_fast_shortcut(data: dict):
     require(data, ["workspace_pool", "source"], "pool")
     require(data, ["fast_v2", "used"], True)
     require(data, ["fallback_chain"], ["hot_force_failed", "fast"])
+    require_hook_annotations(data)
 
 
 def check_fast_v2_import_wired(data: dict):
@@ -177,13 +200,7 @@ def check_fast_v2_import_wired(data: dict):
 
     require_agent_names(data, ["planner", "verifier", "test_runner"])
     require_plugin_name(data, "python-hotfix")
-
-    before_hooks = data.get("before_repair_hooks")
-    after_hooks = data.get("after_verify_hooks")
-    if before_hooks != []:
-        raise AssertionError(f"before_repair_hooks expected [] actual={before_hooks!r}")
-    if after_hooks != []:
-        raise AssertionError(f"after_verify_hooks expected [] actual={after_hooks!r}")
+    require_hook_annotations(data)
 
     plugins = data.get("plugins", [])
     if not plugins or not plugins[0].get("enabled"):

@@ -83,9 +83,18 @@ class TermOrganismDaemon:
         self.agents.register(VerifierAgent())
         self.agents.register(TestRunnerAgent())
 
+        for event_name in ("before_repair", "after_verify"):
+            for command in self.plugins.enabled_hook_commands(event_name):
+                self.hooks.register(event_name, command)
+
         print("Daemon warmed up and ready", file=sys.stderr)
         print(f"Loaded plugins: {[p['name'] for p in self.plugins.list_plugins()]}", file=sys.stderr)
         print(f"Registered agents: {self.agents.names()}", file=sys.stderr)
+        print(
+            f"Registered hooks: before_repair={len(self.plugins.enabled_hook_commands('before_repair'))}, "
+            f"after_verify={len(self.plugins.enabled_hook_commands('after_verify'))}",
+            file=sys.stderr,
+        )
 
     async def _ensure_workspace_pool(self):
         if self._workspace_pool_ready:
