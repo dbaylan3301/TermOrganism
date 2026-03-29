@@ -110,6 +110,130 @@ Measured pooled scratch workspaces with telemetry exposed in JSON output.
 ### Hot-force runtime
 ```bash
 TERMORGANISM_USE_DAEMON=1 TERMORGANISM_HOT_FORCE=1 ./termorganism repair /tmp/broken_runtime_hotforce.py --json
+```
+
+### Hot-force import
+```bash
+TERMORGANISM_USE_DAEMON=1 TERMORGANISM_HOT_FORCE=1 ./termorganism repair /tmp/broken_import_hotforce.py --json
+```
+
+### Direct fast_v2
+```bash
+TERMORGANISM_FAST_V2=1 TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/broken_import_hotforce.py --json
+```
+
+### Default daemon-backed routing
+```bash
+TERMORGANISM_USE_DAEMON=1 ./termorganism repair demo/broken_runtime.py --json
+```
+
+---
+
+## Example output fields
+
+Representative JSON fields include:
+
+- `mode`
+- `success`
+- `signature`
+- `strategy`
+- `verify`
+- `confidence`
+- `fast_v2`
+- `fallback_chain`
+- `workspace_pool`
+- `daemon`
+
+Example:
+
+```json
+{
+  "mode": "fast_v2",
+  "success": true,
+  "signature": "importerror:no_module_named",
+  "strategy": "import_guard",
+  "fast_v2": {
+    "used": true,
+    "path": "dynamic_import_guard",
+    "signature": "importerror:no_module_named"
+  },
+  "workspace_pool": {
+    "source": "pool",
+    "latency_ms": 2.926,
+    "id": "ws_000"
+  },
+  "daemon": {
+    "socket": "/tmp/termorganism.sock",
+    "request_ms": 56.282
+  }
+}
+```
+
+---
+
+## Integration test
+
+Run the integration suite with:
+
+```bash
+python3 scripts/integration_test.py
+```
+
+Expected coverage:
+
+- Hot Force Runtime
+- Hot Force Import
+- Fallback Fast Shortcut
+- Direct Fast V2 Import
+
+---
+
+## Current strengths
+
+TermOrganism is currently strongest in:
+
+- deterministic hot repair
+- daemon-backed low-latency routing
+- fast fallback paths
+- measurable workspace reuse
+- explicit repair telemetry
+- branch-verified integration coverage
+
+---
+
+## Current limits
+
+Areas still under active development:
+
+- deeper cross-file performance
+- broader multi-language maturity
+- stronger production ergonomics
+- richer normal-path planning and verification
+- wider benchmark coverage beyond current validated paths
+
+---
+
+## Why this exists
+
+Most terminal tooling either runs commands, suggests fixes, or edits files.
+
+TermOrganism is aiming at a stricter loop:
+
+**observe -> classify -> route -> repair -> verify -> score**
+
+The goal is to make repair execution itself a first-class terminal runtime behavior.
+
+---
+
+## Branch note
+
+This README reflects the active milestone branch:
+
+`milestone/4of4-benchmark-green`
+
+That branch contains the currently validated daemon, hot-force, fast fallback, fast_v2, workspace pool telemetry, and integration coverage work.
+
+---
 
 ## License
 
