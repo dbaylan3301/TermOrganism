@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from core.autofix import run_autofix, finalize_repair_payload
+from core.modes.fast_v2_minimal import FastV2Minimal
 from core.orchestrator_fallback import FallbackOrchestrator
 from core.orchestrator_hot_force import HotCacheForcePath
 from core.repro.harness import run_python_file
@@ -30,13 +31,15 @@ class TermOrganismDaemon:
     """
     Persistent daemon:
     - hot_force direct path
+    - fast_v2 minimal path
     - fallback chain for auto/fast/normal
-    - measured workspace pool telemetry for hot-force and fast-shortcut
+    - measured workspace pool telemetry
     """
 
     def __init__(self, socket_path: Path = Path("/tmp/termorganism.sock")):
         self.socket_path = socket_path
         self.hot_force = HotCacheForcePath()
+        self.fast_v2 = FastV2Minimal(hot_repairs=self.hot_force.HOT_REPAIRS)
         self.workspace_pool = RealWorkspacePool(size=5)
         self._workspace_pool_ready = False
         self._workspace_pool_lock = asyncio.Lock()
@@ -170,6 +173,59 @@ class TermOrganismDaemon:
         finally:
             self.workspace_pool.release(ws, dirty=True)
 
+    def _run_fast_v2_workspace_sync(self, original: Path, ws_target: Path, plan: dict[str, Any]) -> dict[str, Any]:
+        code = str(plan["code"])
+        ast.parse(code)
+        ws_target.write_text(code, encoding="utf-8")
+
+        result = {
+            "success": True,
+            "mode": "fast_v2",
+            "signature": plan["signature"],
+            "strategy": plan["strategy"],
+            "target_file": str(ws_target),
+            "verify": {
+                "ok": True,
+                "reason": plan.get("verify_reason", "fast_v2_syntax_only"),
+            },
+            "confidence": {
+                "score": float(plan.get("confidence", 0.9)),
+                "factors": {
+                    "fast_v2": float(plan.get("confidence", 0.9)),
+                    "syntax_check": 1.0,
+                },
+                "recommendation": "auto_apply" if float(plan.get("confidence", 0.9)) >= 0.95 else "human_review",
+            },
+            "fast_v2": {
+                "used": True,
+                "path": plan.get("path", "unknown"),
+                "signature": plan["signature"],
+            },
+        }
+        return self._copy_back_if_success(ws_target, original, result)
+
+    async def _run_fast_v2(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
+        plan = self.fast_v2.plan(file_path, context)
+        if not bool(plan.get("used")):
+            return {
+                "success": False,
+                "mode": "fast_v2",
+                "signature": plan.get("signature", ""),
+                "error": "fast_v2_no_plan",
+                "fast_v2": plan,
+            }
+
+        await self._ensure_workspace_pool()
+        ws, meta = await self.workspace_pool.acquire()
+        started = time.monotonic()
+        try:
+            ws_target = await asyncio.to_thread(self._prepare_workspace_file, file_path, ws)
+            result = await asyncio.to_thread(self._run_fast_v2_workspace_sync, file_path, ws_target, plan)
+            result["latency_ms"] = round((time.monotonic() - started) * 1000.0, 3)
+            return self._merge_workspace_meta(result, meta)
+        finally:
+            self.workspace_pool.release(ws, dirty=True)
+
     def _quick_signature(self, file_path: Path, context: dict[str, Any]) -> str:
         explicit = str(context.get("signature") or "").strip().lower()
         if explicit:
@@ -275,7 +331,7 @@ class TermOrganismDaemon:
 
             stmt = code_lines[0]
             m_import = re.fullmatch(r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
-            m_from = re.fullmatch(r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
+            m_from = re.fullmatch(r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?\s*", stmt)
 
             generated = None
             if m_import:
@@ -296,17 +352,8 @@ class TermOrganismDaemon:
                         f"    {module} = None\n"
                     )
             elif m_from:
-                module = m_from.group(1)
-                name = m_from.group(2)
-                alias = m_from.group(3)
-                bind = alias or name
-                import_stmt = f"from {module} import {name}" + (f" as {alias}" if alias else "")
-                generated = (
-                    f"try:\n"
-                    f"    {import_stmt}\n"
-                    f"except ModuleNotFoundError:\n"
-                    f"    {bind} = None\n"
-                )
+                # this branch intentionally kept narrow
+                return None
 
             if generated:
                 return self._fast_shortcut_result(
@@ -394,6 +441,11 @@ class TermOrganismDaemon:
                     }
                     result = await self._run_hot_force(file_path, hot_ctx)
                     result["fallback_chain"] = ["hot_force"]
+                elif mode == "fast_v2":
+                    if not context:
+                        context = self._build_context(file_path)
+                    result = await self._run_fast_v2(file_path, context)
+                    result["fallback_chain"] = ["fast_v2"]
                 else:
                     if not context:
                         context = self._build_context(file_path)

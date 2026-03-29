@@ -17,7 +17,10 @@ FILE="${2:-}"
 MODE="auto"
 if [[ "${TERMORGANISM_HOT_FORCE:-}" =~ ^(1|true|yes|on)$ ]]; then
   MODE="hot_force"
-elif printf '%s\n' "$*" | grep -q -- '--fast'; then
+elif [[ "${TERMORGANISM_FAST_V2:-}" =~ ^(1|true|yes|on)$ ]]; then
+  MODE="fast_v2"
+elif printf '%s
+' "$*" | grep -q -- '--fast'; then
   MODE="fast"
 fi
 

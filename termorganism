@@ -20,6 +20,8 @@ def _target_from_argv(argv):
 def _mode_from_env(argv):
     if os.getenv("TERMORGANISM_HOT_FORCE", "").strip().lower() in {"1", "true", "yes", "on"}:
         return "hot_force"
+    if os.getenv("TERMORGANISM_FAST_V2", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return "fast_v2"
     if "--fast" in argv:
         return "fast"
     return "auto"
