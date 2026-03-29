@@ -4,6 +4,7 @@ import os
 import socket
 import sys
 from pathlib import Path
+import re
 
 
 def _json_requested(argv):
@@ -30,35 +31,24 @@ def _minimal_context(file_path: str) -> dict:
         return {"error": "file_not_found", "file": file_path}
 
     try:
-        # küçük ve ucuz okuma
         with p.open("r", encoding="utf-8", errors="ignore") as f:
             content = f.read(4096)
     except Exception as e:
-        return {
-            "error_type": type(e).__name__,
-            "file": file_path,
-        }
-
-    low = content.lower()
+        return {"error_type": type(e).__name__, "file": file_path}
 
     if "open(" in content and ".read()" in content:
-        return {
-            "file": file_path,
-            "hint": "filenotfounderror",
-            "signature": "filenotfounderror:open:runtime",
-        }
+        return {"file": file_path, "hint": "filenotfounderror", "signature": "filenotfounderror:open:runtime"}
 
     if "read_text(" in content:
-        return {
-            "file": file_path,
-            "hint": "filenotfounderror",
-            "signature": "filenotfounderror:open:runtime",
-        }
+        return {"file": file_path, "hint": "filenotfounderror", "signature": "filenotfounderror:open:runtime"}
 
-    return {
-        "file": file_path,
-        "hint": "unknown",
-    }
+    if re.search(r'(?m)^\s*import\s+[A-Za-z_][A-Za-z0-9_]*\s*$', content):
+        return {"file": file_path, "hint": "importerror", "signature": "importerror:no_module_named"}
+
+    if re.search(r'(?m)^\s*from\s+[A-Za-z_][A-Za-z0-9_\.]*\s+import\s+[A-Za-z_][A-Za-z0-9_]*\s*$', content):
+        return {"file": file_path, "hint": "importerror", "signature": "importerror:no_module_named"}
+
+    return {"file": file_path, "hint": "unknown"}
 
 
 def _send_to_daemon(payload: dict, socket_path: str = "/tmp/termorganism.sock") -> dict:
@@ -108,11 +98,11 @@ def _run_daemon(argv) -> int | None:
     mode = _mode_from_env(argv)
     context = _minimal_context(target)
 
-    if mode == "hot_force" and context.get("signature") == "filenotfounderror:open:runtime":
+    if mode == "hot_force" and context.get("signature"):
         payload = {
             "fast_path": "hot_force",
             "file": target,
-            "signature": "filenotfounderror:open:runtime",
+            "signature": context["signature"],
             "mode": "hot_force",
         }
     else:
@@ -124,7 +114,7 @@ def _run_daemon(argv) -> int | None:
 
     result = _send_to_daemon(payload, socket_path=str(socket_path))
 
-    if _json_requested(argv):
+    if "--json" in argv:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     else:
         print(json.dumps(result, ensure_ascii=False))
@@ -137,7 +127,6 @@ def main():
     if daemon_rc is not None:
         return daemon_rc
 
-    # slow fallback only here: lazy import
     from core.cli.autofix_cli import main as slow_main
     return slow_main()
 

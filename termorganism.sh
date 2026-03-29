@@ -42,6 +42,12 @@ if [[ "$MODE" == "hot_force" ]]; then
   if [[ -z "$SIGNATURE" ]] && printf '%s' "$HEAD_CONTENT" | grep -q 'read_text('; then
     SIGNATURE="filenotfounderror:open:runtime"
   fi
+  if [[ -z "$SIGNATURE" ]] && printf '%s\n' "$HEAD_CONTENT" | grep -Eq '^[[:space:]]*import[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$'; then
+    SIGNATURE="importerror:no_module_named"
+  fi
+  if [[ -z "$SIGNATURE" ]] && printf '%s\n' "$HEAD_CONTENT" | grep -Eq '^[[:space:]]*from[[:space:]]+[A-Za-z_][A-Za-z0-9_\.]*[[:space:]]+import[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$'; then
+    SIGNATURE="importerror:no_module_named"
+  fi
 fi
 
 if [[ -n "$SIGNATURE" && "$MODE" == "hot_force" ]]; then
@@ -55,14 +61,20 @@ if command -v socat >/dev/null 2>&1; then
   exit $?
 fi
 
-python3 - <<PY2
-import socket, sys
-payload = '''$PAYLOAD'''.encode("utf-8")
+PAYLOAD_JSON="$PAYLOAD" SOCKET_PATH="$SOCKET" python3 - <<'PY2'
+import os
+import socket
+import sys
+
+payload = os.environ["PAYLOAD_JSON"].encode("utf-8")
+socket_path = os.environ["SOCKET_PATH"]
+
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.settimeout(3.0)
-sock.connect(r"$SOCKET")
+sock.connect(socket_path)
 sock.sendall(payload)
 sock.shutdown(socket.SHUT_WR)
+
 buf = b""
 while True:
     chunk = sock.recv(65536)
@@ -70,5 +82,6 @@ while True:
         break
     buf += chunk
 sock.close()
+
 sys.stdout.write(buf.decode("utf-8"))
 PY2
