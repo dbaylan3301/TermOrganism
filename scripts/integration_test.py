@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import time
@@ -89,7 +88,7 @@ def run_test(name: str, cmd: str, checker):
     print(name)
     print(f"{'='*60}")
 
-    # test isolation: restore mutable fixtures before specific cases
+    # isolation for mutable fixture
     if name == "Direct Fast V2 Import":
         Path("/tmp/broken_import_hotforce.py").write_text(
             'import definitely_missing_package_12345\n',
@@ -151,7 +150,6 @@ def check_fallback_fast_shortcut(data: dict):
     require(data, ["workspace_pool", "source"], "pool")
     require(data, ["fast_v2", "used"], True)
     require(data, ["fallback_chain"], ["hot_force_failed", "fast"])
-
 
 
 def check_fast_v2_import(data: dict):
