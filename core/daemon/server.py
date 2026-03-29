@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from core.autofix import run_autofix, finalize_repair_payload
+from core.orchestrator_fallback import FallbackOrchestrator
 from core.orchestrator_hot_force import HotCacheForcePath
 from core.repro.harness import run_python_file
 
@@ -24,13 +25,18 @@ class RepairRequest:
 class TermOrganismDaemon:
     """
     Persistent daemon:
-    - hot_force path
-    - existing run_autofix path in-process
+    - hot_force direct path
+    - fallback chain for auto/fast/normal
     """
 
     def __init__(self, socket_path: Path = Path("/tmp/termorganism.sock")):
         self.socket_path = socket_path
         self.hot_force = HotCacheForcePath()
+        self.fallback = FallbackOrchestrator(
+            run_hot_force=self._run_hot_force,
+            run_existing_pipeline=self._run_existing_pipeline,
+            should_hot_force=self._should_hot_force,
+        )
         self._prewarm()
 
     def _prewarm(self):
@@ -94,10 +100,16 @@ class TermOrganismDaemon:
         }
 
     def _should_hot_force(self, context: dict[str, Any]) -> bool:
+        explicit = str(context.get("signature") or "").strip().lower()
+        if explicit in {"filenotfounderror:open:runtime", "importerror:no_module_named"}:
+            return True
+
         text = str(context.get("error_text") or "").lower()
-        return "filenotfounderror" in text and (
-            "open(" in text or "read_text" in text or "no such file or directory" in text
-        )
+        if "filenotfounderror" in text and ("open(" in text or "read_text" in text or "no such file or directory" in text):
+            return True
+        if "modulenotfounderror" in text or "no module named" in text or "importerror" in text:
+            return True
+        return False
 
     async def _run_hot_force(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
         return await asyncio.to_thread(self.hot_force.repair, file_path, context)
@@ -120,10 +132,12 @@ class TermOrganismDaemon:
         try:
             data = await reader.read(65536)
             request = json.loads(data.decode("utf-8"))
+
             raw_file = request.get("file_path") or request.get("file")
             if not raw_file:
                 raise ValueError("missing file_path/file")
             file_path = Path(raw_file)
+
             context = request.get("context") or {}
             mode = str(request.get("mode") or "auto")
 
@@ -134,26 +148,18 @@ class TermOrganismDaemon:
                     "error": f"target does not exist: {file_path}",
                 }
             else:
-                if not context:
-                    context = self._build_context(file_path)
-
                 if request.get("fast_path") == "hot_force":
                     hot_ctx = {
-                        "error_text": "FileNotFoundError: hot_force signature",
-                        "traceback": [{"error_type": "FileNotFoundError", "function": "open"}],
+                        "error_text": "Hot force signature request",
+                        "traceback": [{"error_type": "HotForceSignature", "function": "hot_force"}],
                         "signature": request.get("signature"),
                     }
                     result = await self._run_hot_force(file_path, hot_ctx)
-                elif mode == "hot_force" or self._should_hot_force(context):
-                    result = await self._run_hot_force(file_path, context)
-                elif mode in {"fast", "normal", "auto"}:
-                    result = await self._run_existing_pipeline(file_path, "fast" if mode == "fast" else "normal", context)
+                    result["fallback_chain"] = ["hot_force"]
                 else:
-                    result = {
-                        "success": False,
-                        "mode": "daemon",
-                        "error": f"unsupported mode: {mode}",
-                    }
+                    if not context:
+                        context = self._build_context(file_path)
+                    result = await self.fallback.repair(file_path, context, mode=mode)
 
         except Exception as exc:
             result = {
