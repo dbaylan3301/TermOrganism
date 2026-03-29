@@ -114,7 +114,7 @@ class TermOrganismDaemon:
     async def _run_hot_force(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
         return await asyncio.to_thread(self.hot_force.repair, file_path, context)
 
-    async def _run_existing_pipeline(self, file_path: Path, mode: str, context: dict[str, Any]) -> dict[str, Any]:
+    def _run_existing_pipeline_sync(self, file_path: Path, mode: str, context: dict[str, Any]) -> dict[str, Any]:
         repro = run_python_file(str(file_path))
         error_text = str(getattr(repro, "stderr", "") or "")
         result = run_autofix(
@@ -125,6 +125,14 @@ class TermOrganismDaemon:
         result = finalize_repair_payload(result, fast=(mode == "fast"))
         result = self._sync_hot_cache_confidence(result)
         return result
+
+    async def _run_existing_pipeline(self, file_path: Path, mode: str, context: dict[str, Any]) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self._run_existing_pipeline_sync,
+            file_path,
+            mode,
+            context,
+        )
 
     async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         start = time.monotonic()

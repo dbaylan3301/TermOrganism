@@ -75,9 +75,9 @@ class FallbackOrchestrator:
             if stage == "hot_force":
                 result = await asyncio.wait_for(self.run_hot_force(file_path, context), timeout=1.5)
             elif stage == "fast":
-                result = await asyncio.wait_for(self.run_existing_pipeline(file_path, "fast", context), timeout=10.0)
+                result = await asyncio.wait_for(self.run_existing_pipeline(file_path, "fast", context), timeout=4.0)
             elif stage == "normal":
-                result = await asyncio.wait_for(self.run_existing_pipeline(file_path, "normal", context), timeout=45.0)
+                result = await asyncio.wait_for(self.run_existing_pipeline(file_path, "normal", context), timeout=12.0)
             else:
                 result = {"success": False, "error": f"unknown stage: {stage}"}
         except Exception as exc:

@@ -42,7 +42,7 @@ if [[ "$MODE" == "hot_force" ]]; then
   if [[ -z "$SIGNATURE" ]] && printf '%s' "$HEAD_CONTENT" | grep -q 'read_text('; then
     SIGNATURE="filenotfounderror:open:runtime"
   fi
-  if [[ -z "$SIGNATURE" ]] && printf '%s\n' "$HEAD_CONTENT" | grep -Eq '^[[:space:]]*import[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$'; then
+  if [[ -z "$SIGNATURE" ]] && printf '%s\n' "$HEAD_CONTENT" | grep -Eq '^[[:space:]]*import[[:space:]]+[A-Za-z_][A-Za-z0-9_]*([[:space:]]+as[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)?[[:space:]]*$'; then
     SIGNATURE="importerror:no_module_named"
   fi
   if [[ -z "$SIGNATURE" ]] && printf '%s\n' "$HEAD_CONTENT" | grep -Eq '^[[:space:]]*from[[:space:]]+[A-Za-z_][A-Za-z0-9_\.]*[[:space:]]+import[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$'; then
@@ -61,7 +61,8 @@ if command -v socat >/dev/null 2>&1; then
   exit $?
 fi
 
-PAYLOAD_JSON="$PAYLOAD" SOCKET_PATH="$SOCKET" python3 - <<'PY2'
+CLIENT_TIMEOUT="${TERMORGANISM_CLIENT_TIMEOUT:-30}"
+PAYLOAD_JSON="$PAYLOAD" SOCKET_PATH="$SOCKET" CLIENT_TIMEOUT="$CLIENT_TIMEOUT" python3 - <<'PY2'
 import os
 import socket
 import sys
@@ -70,7 +71,7 @@ payload = os.environ["PAYLOAD_JSON"].encode("utf-8")
 socket_path = os.environ["SOCKET_PATH"]
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.settimeout(3.0)
+sock.settimeout(float(os.environ.get("CLIENT_TIMEOUT", "30")))
 sock.connect(socket_path)
 sock.sendall(payload)
 sock.shutdown(socket.SHUT_WR)
