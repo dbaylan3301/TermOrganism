@@ -19,6 +19,16 @@ from core.orchestrator_hot_force import HotCacheForcePath
 from core.repro.harness import run_python_file
 from core.sandbox.workspace_pool_real import RealWorkspacePool
 
+from core.plugins import PluginLoader, PluginRegistry
+from core.hooks import HookEngine, HookEvent
+from core.policy import PolicyEngine
+from core.agents.registry import AgentRegistry
+from core.agents.scheduler import AgentScheduler
+from core.agents.base import AgentTask
+from core.agents.planner import PlannerAgent
+from core.agents.verifier import VerifierAgent
+from core.agents.test_runner import TestRunnerAgent
+
 
 @dataclass
 class RepairRequest:
@@ -34,15 +44,26 @@ class TermOrganismDaemon:
     - fast_v2 minimal path
     - fallback chain for auto/fast/normal
     - measured workspace pool telemetry
+    - plugin / policy / hooks / subagent wiring
     """
 
     def __init__(self, socket_path: Path = Path("/tmp/termorganism.sock")):
         self.socket_path = socket_path
+
         self.hot_force = HotCacheForcePath()
         self.fast_v2 = FastV2Minimal(hot_repairs=self.hot_force.HOT_REPAIRS)
         self.workspace_pool = RealWorkspacePool(size=5)
         self._workspace_pool_ready = False
         self._workspace_pool_lock = asyncio.Lock()
+
+        self.plugins = PluginRegistry()
+        self.plugin_loader = PluginLoader("plugins")
+
+        self.policy = PolicyEngine(".termorganism/rules/repo.yaml")
+        self.hooks = HookEngine()
+
+        self.agents = AgentRegistry()
+        self.scheduler = AgentScheduler(self.agents)
 
         self.fallback = FallbackOrchestrator(
             run_hot_force=self._run_hot_force,
@@ -55,7 +76,16 @@ class TermOrganismDaemon:
         import pathlib
         _ = ast, pathlib
         _ = self.hot_force.HOT_REPAIRS
+
+        self.plugin_loader.load_into(self.plugins)
+
+        self.agents.register(PlannerAgent())
+        self.agents.register(VerifierAgent())
+        self.agents.register(TestRunnerAgent())
+
         print("Daemon warmed up and ready", file=sys.stderr)
+        print(f"Loaded plugins: {[p['name'] for p in self.plugins.list_plugins()]}", file=sys.stderr)
+        print(f"Registered agents: {self.agents.names()}", file=sys.stderr)
 
     async def _ensure_workspace_pool(self):
         if self._workspace_pool_ready:
@@ -159,11 +189,85 @@ class TermOrganismDaemon:
             result["target_file"] = str(original)
         return result
 
+    async def _run_agent_plan(self, *, target: Path, mode: str, context: dict[str, Any]) -> list[dict[str, Any]]:
+        plan = [
+            (
+                "planner",
+                AgentTask(
+                    name="repair_plan",
+                    payload={"target": str(target), "intent": mode, "error_text": context.get("error_text", "")},
+                ),
+            ),
+            (
+                "verifier",
+                AgentTask(
+                    name="pre_verify",
+                    payload={"checks": ["syntax", "behavioral_light"]},
+                ),
+            ),
+            (
+                "test_runner",
+                AgentTask(
+                    name="test_hint",
+                    payload={"command": "python3 scripts/integration_test.py"},
+                ),
+            ),
+        ]
+        results = await self.scheduler.run_many(plan)
+        return [
+            {
+                "agent": r.agent,
+                "ok": r.ok,
+                "output": r.output,
+                "error": r.error,
+            }
+            for r in results
+        ]
+
+    def _policy_gate(self, *, target: Path, action: str, confidence: float) -> dict[str, Any] | None:
+        decision = self.policy.evaluate(path=str(target), action=action, confidence=confidence)
+        if decision.allow:
+            return None
+        return {
+            "success": False,
+            "mode": "policy_block",
+            "error": "policy_blocked",
+            "policy": {
+                "allow": False,
+                "reasons": decision.reasons,
+                "required_checks": decision.required_checks,
+            },
+        }
+
+    def _dispatch_hook(self, event_name: str, payload: dict[str, Any], metadata: dict[str, Any] | None = None) -> list[dict]:
+        return self.hooks.dispatch(HookEvent(name=event_name, payload=payload, metadata=metadata or {}))
+
+    def _attach_common_metadata(
+        self,
+        result: dict[str, Any],
+        *,
+        agent_results: list[dict[str, Any]] | None = None,
+        before_hooks: list[dict] | None = None,
+        after_hooks: list[dict] | None = None,
+    ) -> dict[str, Any]:
+        if agent_results is not None:
+            result["agent_results"] = agent_results
+        if before_hooks is not None:
+            result["before_repair_hooks"] = before_hooks
+        if after_hooks is not None:
+            result["after_verify_hooks"] = after_hooks
+        result["plugins"] = self.plugins.list_plugins()
+        return result
+
     def _run_hot_force_workspace_sync(self, original: Path, ws_target: Path, context: dict[str, Any]) -> dict[str, Any]:
         result = self.hot_force.repair(ws_target, context)
         return self._copy_back_if_success(ws_target, original, result)
 
     async def _run_hot_force(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
+        policy_block = self._policy_gate(target=file_path, action="direct_write", confidence=0.97)
+        if policy_block is not None:
+            return policy_block
+
         await self._ensure_workspace_pool()
         ws, meta = await self.workspace_pool.acquire()
         try:
@@ -214,6 +318,11 @@ class TermOrganismDaemon:
                 "error": "fast_v2_no_plan",
                 "fast_v2": plan,
             }
+
+        confidence = float(plan.get("confidence", 0.9))
+        policy_block = self._policy_gate(target=file_path, action="direct_write", confidence=confidence)
+        if policy_block is not None:
+            return policy_block
 
         await self._ensure_workspace_pool()
         ws, meta = await self.workspace_pool.acquire()
@@ -330,10 +439,7 @@ class TermOrganismDaemon:
                 return None
 
             stmt = code_lines[0]
-            m_import = re.fullmatch(r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
-            m_from = re.fullmatch(r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+as\s+[A-Za-z_][A-Za-z0-9_]*)?\s*", stmt)
-
-            generated = None
+            m_import = re.fullmatch(r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*)?)?\s*", stmt)
             if m_import:
                 module = m_import.group(1)
                 alias = m_import.group(2)
@@ -351,11 +457,6 @@ class TermOrganismDaemon:
                         f"except ModuleNotFoundError:\n"
                         f"    {module} = None\n"
                     )
-            elif m_from:
-                # this branch intentionally kept narrow
-                return None
-
-            if generated:
                 return self._fast_shortcut_result(
                     file_path=file_path,
                     signature=signature,
@@ -375,6 +476,10 @@ class TermOrganismDaemon:
         return self._copy_back_if_success(ws_target, original, result)
 
     async def _run_fast_shortcut_with_pool(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any] | None:
+        policy_block = self._policy_gate(target=file_path, action="direct_write", confidence=0.91)
+        if policy_block is not None:
+            return policy_block
+
         await self._ensure_workspace_pool()
         ws, meta = await self.workspace_pool.acquire()
         try:
@@ -433,6 +538,16 @@ class TermOrganismDaemon:
                     "error": f"target does not exist: {file_path}",
                 }
             else:
+                if not context:
+                    context = self._build_context(file_path)
+
+                agent_results = await self._run_agent_plan(target=file_path, mode=mode, context=context)
+                before_hooks = self._dispatch_hook(
+                    "before_repair",
+                    {"file": str(file_path), "mode": mode, "context": context},
+                    {"socket": str(self.socket_path)},
+                )
+
                 if request.get("fast_path") == "hot_force":
                     hot_ctx = {
                         "error_text": "Hot force signature request",
@@ -442,14 +557,23 @@ class TermOrganismDaemon:
                     result = await self._run_hot_force(file_path, hot_ctx)
                     result["fallback_chain"] = ["hot_force"]
                 elif mode == "fast_v2":
-                    if not context:
-                        context = self._build_context(file_path)
                     result = await self._run_fast_v2(file_path, context)
                     result["fallback_chain"] = ["fast_v2"]
                 else:
-                    if not context:
-                        context = self._build_context(file_path)
                     result = await self.fallback.repair(file_path, context, mode=mode)
+
+                after_hooks = self._dispatch_hook(
+                    "after_verify",
+                    {"file": str(file_path), "mode": mode, "result": result},
+                    {"socket": str(self.socket_path)},
+                )
+
+                result = self._attach_common_metadata(
+                    result,
+                    agent_results=agent_results,
+                    before_hooks=before_hooks,
+                    after_hooks=after_hooks,
+                )
 
         except Exception as exc:
             result = {

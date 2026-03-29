@@ -83,12 +83,24 @@ def require(data: dict, path: list[str], expected=None):
     return cur
 
 
+def require_agent_names(data: dict, expected: list[str]):
+    actual = [item.get("agent") for item in data.get("agent_results", [])]
+    if actual != expected:
+        raise AssertionError(f"agent order mismatch expected={expected!r} actual={actual!r}")
+
+
+def require_plugin_name(data: dict, expected: str):
+    plugins = data.get("plugins", [])
+    names = [p.get("name") for p in plugins]
+    if expected not in names:
+        raise AssertionError(f"plugin {expected!r} not found in {names!r}")
+
+
 def run_test(name: str, cmd: str, checker):
     print(f"\n{'='*60}")
     print(name)
     print(f"{'='*60}")
 
-    # isolation for mutable fixture
     if name == "Direct Fast V2 Import":
         Path("/tmp/broken_import_hotforce.py").write_text(
             'import definitely_missing_package_12345\n',
@@ -107,7 +119,7 @@ def run_test(name: str, cmd: str, checker):
         checker(data)
     except Exception as e:
         print("FAIL:", e)
-        print(json.dumps(data, indent=2, ensure_ascii=False)[:1200])
+        print(json.dumps(data, indent=2, ensure_ascii=False)[:1600])
         return False
 
     print(f"PASS in {elapsed:.1f}ms")
@@ -152,15 +164,34 @@ def check_fallback_fast_shortcut(data: dict):
     require(data, ["fallback_chain"], ["hot_force_failed", "fast"])
 
 
-def check_fast_v2_import(data: dict):
+def check_fast_v2_import_wired(data: dict):
     require(data, ["success"], True)
     require(data, ["mode"], "fast_v2")
     require(data, ["signature"], "importerror:no_module_named")
     require(data, ["strategy"], "import_guard")
     require(data, ["verify", "ok"], True)
     require(data, ["fast_v2", "used"], True)
+    require(data, ["fast_v2", "path"], "dynamic_import_guard")
     require(data, ["workspace_pool", "source"], "pool")
     require(data, ["fallback_chain"], ["fast_v2"])
+
+    require_agent_names(data, ["planner", "verifier", "test_runner"])
+    require_plugin_name(data, "python-hotfix")
+
+    before_hooks = data.get("before_repair_hooks")
+    after_hooks = data.get("after_verify_hooks")
+    if before_hooks != []:
+        raise AssertionError(f"before_repair_hooks expected [] actual={before_hooks!r}")
+    if after_hooks != []:
+        raise AssertionError(f"after_verify_hooks expected [] actual={after_hooks!r}")
+
+    plugins = data.get("plugins", [])
+    if not plugins or not plugins[0].get("enabled"):
+        raise AssertionError("expected at least one enabled plugin")
+
+    daemon_ms = float(require(data, ["daemon", "request_ms"]))
+    if daemon_ms <= 0:
+        raise AssertionError(f"daemon.request_ms must be > 0 actual={daemon_ms!r}")
 
 
 def main() -> int:
@@ -186,7 +217,7 @@ def main() -> int:
         (
             "Direct Fast V2 Import",
             "TERMORGANISM_FAST_V2=1 TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/broken_import_hotforce.py --json 2>/dev/null",
-            check_fast_v2_import,
+            check_fast_v2_import_wired,
         ),
     ]
 

@@ -1,0 +1,9 @@
+{
+  "name": "python-hotfix",
+  "version": "0.1.0",
+  "description": "Builtin python hot-repair surfaces",
+  "skills": ["python_hotfix"],
+  "agents": ["planner", "verifier", "test_runner"],
+  "hooks": ["before_repair", "after_verify"],
+  "enabled_by_default": true
+}

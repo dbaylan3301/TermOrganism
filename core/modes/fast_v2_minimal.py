@@ -9,7 +9,8 @@ class FastV2Minimal:
     """
     Minimal fast_v2:
     - hot runtime signature
-    - import/import-as/from-import guard
+    - plain import / import as / from import
+    - already-wrapped try/except import guard
     """
 
     def __init__(self, hot_repairs: dict[str, dict] | None = None):
@@ -41,6 +42,59 @@ class FastV2Minimal:
             return "importerror:no_module_named"
         return ""
 
+    def _find_import_statement(self, source: str) -> str | None:
+        for line in source.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if re.fullmatch(r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stripped):
+                return stripped
+            if re.fullmatch(r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stripped):
+                return stripped
+        return None
+
+    def _build_import_guard(self, stmt: str) -> str | None:
+        m_import = re.fullmatch(
+            r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*",
+            stmt,
+        )
+        m_from = re.fullmatch(
+            r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*",
+            stmt,
+        )
+
+        if m_import:
+            module = m_import.group(1)
+            alias = m_import.group(2)
+            if alias:
+                return (
+                    f"try:\n"
+                    f"    import {module} as {alias}\n"
+                    f"except ModuleNotFoundError:\n"
+                    f"    {alias} = None\n"
+                )
+            return (
+                f"try:\n"
+                f"    import {module}\n"
+                f"except ModuleNotFoundError:\n"
+                f"    {module} = None\n"
+            )
+
+        if m_from:
+            module = m_from.group(1)
+            name = m_from.group(2)
+            alias = m_from.group(3)
+            bind = alias or name
+            import_stmt = f"from {module} import {name}" + (f" as {alias}" if alias else "")
+            return (
+                f"try:\n"
+                f"    {import_stmt}\n"
+                f"except ModuleNotFoundError:\n"
+                f"    {bind} = None\n"
+            )
+
+        return None
+
     def plan(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
         signature = self._extract_signature(file_path, context)
 
@@ -70,70 +124,30 @@ class FastV2Minimal:
                     "signature": signature,
                 }
 
-            code_lines = []
-            for line in source.splitlines():
-                stripped = line.strip()
-                if not stripped or stripped.startswith("#"):
-                    continue
-                code_lines.append(stripped)
-
-            if not code_lines:
+            stmt = self._find_import_statement(source)
+            if not stmt:
                 return {
                     "used": False,
-                    "miss_reason": "empty_source",
+                    "miss_reason": "unsupported_import_shape",
                     "signature": signature,
                 }
 
-            stmt = code_lines[0]
-            m_import = re.fullmatch(r"import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
-            m_from = re.fullmatch(r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*", stmt)
-
-            generated = None
-            if m_import:
-                module = m_import.group(1)
-                alias = m_import.group(2)
-                if alias:
-                    generated = (
-                        f"try:\n"
-                        f"    import {module} as {alias}\n"
-                        f"except ModuleNotFoundError:\n"
-                        f"    {alias} = None\n"
-                    )
-                else:
-                    generated = (
-                        f"try:\n"
-                        f"    import {module}\n"
-                        f"except ModuleNotFoundError:\n"
-                        f"    {module} = None\n"
-                    )
-            elif m_from:
-                module = m_from.group(1)
-                name = m_from.group(2)
-                alias = m_from.group(3)
-                bind = alias or name
-                import_stmt = f"from {module} import {name}" + (f" as {alias}" if alias else "")
-                generated = (
-                    f"try:\n"
-                    f"    {import_stmt}\n"
-                    f"except ModuleNotFoundError:\n"
-                    f"    {bind} = None\n"
-                )
-
-            if generated:
+            generated = self._build_import_guard(stmt)
+            if not generated:
                 return {
-                    "used": True,
-                    "path": "dynamic_import_guard",
+                    "used": False,
+                    "miss_reason": "unsupported_import_shape",
                     "signature": signature,
-                    "strategy": "import_guard",
-                    "confidence": 0.91,
-                    "code": generated,
-                    "verify_reason": "fast_v2_import_guard",
                 }
 
             return {
-                "used": False,
-                "miss_reason": "unsupported_import_shape",
+                "used": True,
+                "path": "dynamic_import_guard",
                 "signature": signature,
+                "strategy": "import_guard",
+                "confidence": 0.91,
+                "code": generated,
+                "verify_reason": "fast_v2_import_guard",
             }
 
         return {
