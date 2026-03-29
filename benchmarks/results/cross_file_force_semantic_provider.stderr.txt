@@ -1,0 +1,3 @@
+Timeout (0:00:20)!
+Thread 0x0000007a44fce020 (most recent call first):
+  File "/usr/lib/python3.13/shutil.py", line ??? in _copyxattr

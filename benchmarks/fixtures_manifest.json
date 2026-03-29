@@ -1,0 +1,327 @@
+[
+  {
+    "id": "runtime_missing_file_basic",
+    "category": "runtime",
+    "target": "demo/broken_runtime.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery",
+        "touch_only"
+      ],
+      "sandbox_ok": true,
+      "behavioral_ok": true
+    }
+  },
+  {
+    "id": "runtime_missing_nested_read",
+    "category": "runtime",
+    "target": "demo/runtime_missing_nested_read.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery",
+        "touch_only"
+      ],
+      "sandbox_ok": true,
+      "behavioral_ok": true
+    }
+  },
+  {
+    "id": "runtime_missing_config_open",
+    "category": "runtime",
+    "target": "demo/runtime_missing_config_open.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery",
+        "touch_only"
+      ],
+      "sandbox_ok": true,
+      "behavioral_ok": true
+    }
+  },
+  {
+    "id": "runtime_missing_write_parent",
+    "category": "runtime",
+    "target": "demo/runtime_missing_write_parent.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery",
+        "touch_only"
+      ],
+      "sandbox_ok": true,
+      "behavioral_ok": true
+    }
+  },
+  {
+    "id": "runtime_missing_env_file",
+    "category": "runtime",
+    "target": "demo/runtime_missing_env_file.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery",
+        "touch_only"
+      ],
+      "sandbox_ok": true,
+      "behavioral_ok": true
+    }
+  },
+  {
+    "id": "dependency_missing_import_basic",
+    "category": "dependency",
+    "target": "demo/broken_import.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "dependency_install"
+      ]
+    }
+  },
+  {
+    "id": "dependency_missing_from_import",
+    "category": "dependency",
+    "target": "demo/dependency_missing_from_import.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "dependency_install"
+      ]
+    }
+  },
+  {
+    "id": "dependency_missing_alias",
+    "category": "dependency",
+    "target": "demo/dependency_missing_alias.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "dependency_install"
+      ]
+    }
+  },
+  {
+    "id": "dependency_missing_submodule",
+    "category": "dependency",
+    "target": "demo/dependency_missing_submodule.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "dependency_install"
+      ]
+    }
+  },
+  {
+    "id": "dependency_missing_plain_import",
+    "category": "dependency",
+    "target": "demo/dependency_missing_plain_import.py",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "dependency_install"
+      ]
+    }
+  },
+  {
+    "id": "shell_missing_command_basic",
+    "category": "shell",
+    "target": "demo/broken_shell_bat.txt",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "shell_command_missing"
+      ]
+    }
+  },
+  {
+    "id": "shell_missing_alpha",
+    "category": "shell",
+    "target": "demo/shell_missing_alpha.txt",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "shell_command_missing"
+      ]
+    }
+  },
+  {
+    "id": "shell_missing_beta",
+    "category": "shell",
+    "target": "demo/shell_missing_beta.txt",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "shell_command_missing"
+      ]
+    }
+  },
+  {
+    "id": "shell_missing_gamma",
+    "category": "shell",
+    "target": "demo/shell_missing_gamma.txt",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "shell_command_missing"
+      ]
+    }
+  },
+  {
+    "id": "shell_missing_delta",
+    "category": "shell",
+    "target": "demo/shell_missing_delta.txt",
+    "args": [],
+    "expected": {
+      "result_present": true,
+      "kind_in": [
+        "shell_command_missing"
+      ]
+    }
+  },
+  {
+    "id": "cross_file_force_semantic_provider",
+    "category": "cross_file",
+    "target": "demo/cross_file_dep.py",
+    "args": [
+      "--force-semantic"
+    ],
+    "expected": {
+      "best_plan_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery"
+      ],
+      "provider_contains": [
+        "helper_mod.py"
+      ],
+      "caller_contains": [
+        "cross_file_dep.py"
+      ],
+      "target_file_contains": [
+        "helper_mod.py"
+      ],
+      "contract_ok": true
+    }
+  },
+  {
+    "id": "cross_file_cfg_provider",
+    "category": "cross_file",
+    "target": "demo/cross_file_cfg.py",
+    "args": [
+      "--force-semantic"
+    ],
+    "expected": {
+      "best_plan_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery"
+      ],
+      "provider_contains": [
+        "helper_cfg.py"
+      ],
+      "caller_contains": [
+        "cross_file_cfg.py"
+      ],
+      "target_file_contains": [
+        "helper_cfg.py"
+      ],
+      "contract_ok": true
+    }
+  },
+  {
+    "id": "cross_file_template_provider",
+    "category": "cross_file",
+    "target": "demo/cross_file_template.py",
+    "args": [
+      "--force-semantic"
+    ],
+    "expected": {
+      "best_plan_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery"
+      ],
+      "provider_contains": [
+        "helper_template.py"
+      ],
+      "caller_contains": [
+        "cross_file_template.py"
+      ],
+      "target_file_contains": [
+        "helper_template.py"
+      ],
+      "contract_ok": true
+    }
+  },
+  {
+    "id": "cross_file_data_provider",
+    "category": "cross_file",
+    "target": "demo/cross_file_data.py",
+    "args": [
+      "--force-semantic"
+    ],
+    "expected": {
+      "best_plan_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery"
+      ],
+      "provider_contains": [
+        "helper_data.py"
+      ],
+      "caller_contains": [
+        "cross_file_data.py"
+      ],
+      "target_file_contains": [
+        "helper_data.py"
+      ],
+      "contract_ok": true
+    }
+  },
+  {
+    "id": "cross_file_logs_provider",
+    "category": "cross_file",
+    "target": "demo/cross_file_logs.py",
+    "args": [
+      "--force-semantic"
+    ],
+    "expected": {
+      "best_plan_present": true,
+      "strategy_in": [
+        "guard_exists",
+        "try_except_recovery"
+      ],
+      "provider_contains": [
+        "helper_logs.py"
+      ],
+      "caller_contains": [
+        "cross_file_logs.py"
+      ],
+      "target_file_contains": [
+        "helper_logs.py"
+      ],
+      "contract_ok": true
+    }
+  }
+]

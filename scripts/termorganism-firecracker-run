@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--timeout-sec", type=int, default=5)
+    ap.add_argument("--memory-mb", type=int, default=256)
+    ap.add_argument("--cpu-count", type=int, default=1)
+    ap.add_argument("--backend", default="firecracker")
+    args = ap.parse_args()
+
+    code = sys.stdin.read()
+    start = time.perf_counter()
+
+    # Safe helper placeholder:
+    # This wrapper keeps API stable now; real microVM boot can replace this later.
+    with tempfile.TemporaryDirectory(prefix="termorganism_fc_helper_") as td:
+        p = Path(td) / "script.py"
+        p.write_text(code, encoding="utf-8")
+
+        proc = subprocess.run(
+            ["python3", str(p)],
+            capture_output=True,
+            text=True,
+            timeout=args.timeout_sec,
+        )
+
+        out = {
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "duration_ms": round((time.perf_counter() - start) * 1000.0, 3),
+            "resource_usage": {
+                "memory_mb_limit": args.memory_mb,
+                "cpu_count": args.cpu_count,
+                "backend_helper": args.backend,
+            },
+        }
+        print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,55 @@
+{
+  "dashboard": {
+    "title": "TermOrganism Repair Pipeline",
+    "panels": [
+      {
+        "title": "Repair Rate (req/s)",
+        "targets": [
+          {
+            "expr": "rate(termorganism_repairs_total[5m])",
+            "legendFormat": "{{mode}} - {{status}} - {{language}}"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Latency Percentiles",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(termorganism_repair_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p99"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(termorganism_repair_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(termorganism_repair_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p50"
+          }
+        ],
+        "type": "graph"
+      },
+      {
+        "title": "Confidence Distribution",
+        "targets": [
+          {
+            "expr": "termorganism_confidence_bucket",
+            "legendFormat": "confidence {{le}}"
+          }
+        ],
+        "type": "heatmap"
+      },
+      {
+        "title": "Cache Hit Rate",
+        "targets": [
+          {
+            "expr": "sum(rate(termorganism_cache_hits_total[5m])) / clamp_min(sum(rate(termorganism_repairs_total[5m])), 0.0001)",
+            "legendFormat": "hit rate"
+          }
+        ],
+        "type": "stat"
+      }
+    ]
+  }
+}
