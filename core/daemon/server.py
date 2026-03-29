@@ -5,6 +5,7 @@ import asyncio
 import ast
 import json
 import re
+import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from core.autofix import run_autofix, finalize_repair_payload
 from core.orchestrator_fallback import FallbackOrchestrator
 from core.orchestrator_hot_force import HotCacheForcePath
 from core.repro.harness import run_python_file
+from core.sandbox.workspace_pool_real import RealWorkspacePool
 
 
 @dataclass
@@ -29,11 +31,16 @@ class TermOrganismDaemon:
     Persistent daemon:
     - hot_force direct path
     - fallback chain for auto/fast/normal
+    - measured workspace pool telemetry for hot-force and fast-shortcut
     """
 
     def __init__(self, socket_path: Path = Path("/tmp/termorganism.sock")):
         self.socket_path = socket_path
         self.hot_force = HotCacheForcePath()
+        self.workspace_pool = RealWorkspacePool(size=5)
+        self._workspace_pool_ready = False
+        self._workspace_pool_lock = asyncio.Lock()
+
         self.fallback = FallbackOrchestrator(
             run_hot_force=self._run_hot_force,
             run_existing_pipeline=self._run_existing_pipeline,
@@ -46,6 +53,30 @@ class TermOrganismDaemon:
         _ = ast, pathlib
         _ = self.hot_force.HOT_REPAIRS
         print("Daemon warmed up and ready", file=sys.stderr)
+
+    async def _ensure_workspace_pool(self):
+        if self._workspace_pool_ready:
+            return
+        async with self._workspace_pool_lock:
+            if self._workspace_pool_ready:
+                return
+            await self.workspace_pool.initialize()
+            self._workspace_pool_ready = True
+
+    def _merge_workspace_meta(self, result: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+        result["workspace_pool"] = {
+            **meta,
+            "stats": self.workspace_pool.get_stats(),
+        }
+        return result
+
+    def _is_success(self, result: dict[str, Any] | None) -> bool:
+        if not isinstance(result, dict):
+            return False
+        if bool(result.get("success")):
+            return True
+        verify = result.get("verify") or {}
+        return bool(verify.get("ok"))
 
     def _sync_hot_cache_confidence(self, result: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(result, dict):
@@ -112,8 +143,32 @@ class TermOrganismDaemon:
             return True
         return False
 
+    def _prepare_workspace_file(self, original: Path, ws: Path) -> Path:
+        work_dir = ws / "work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        target = work_dir / original.name
+        shutil.copy2(original, target)
+        return target
+
+    def _copy_back_if_success(self, work_target: Path, original: Path, result: dict[str, Any]) -> dict[str, Any]:
+        if self._is_success(result) and work_target.exists():
+            shutil.copy2(work_target, original)
+            result["target_file"] = str(original)
+        return result
+
+    def _run_hot_force_workspace_sync(self, original: Path, ws_target: Path, context: dict[str, Any]) -> dict[str, Any]:
+        result = self.hot_force.repair(ws_target, context)
+        return self._copy_back_if_success(ws_target, original, result)
+
     async def _run_hot_force(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
-        return await asyncio.to_thread(self.hot_force.repair, file_path, context)
+        await self._ensure_workspace_pool()
+        ws, meta = await self.workspace_pool.acquire()
+        try:
+            ws_target = await asyncio.to_thread(self._prepare_workspace_file, file_path, ws)
+            result = await asyncio.to_thread(self._run_hot_force_workspace_sync, file_path, ws_target, context)
+            return self._merge_workspace_meta(result, meta)
+        finally:
+            self.workspace_pool.release(ws, dirty=True)
 
     def _quick_signature(self, file_path: Path, context: dict[str, Any]) -> str:
         explicit = str(context.get("signature") or "").strip().lower()
@@ -180,6 +235,11 @@ class TermOrganismDaemon:
                 }
             },
             "routes": ["fast_shortcut"],
+            "fast_v2": {
+                "used": True,
+                "path": "fast_shortcut",
+                "signature": signature,
+            },
         }
 
     def _try_fast_shortcut(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any] | None:
@@ -267,12 +327,25 @@ class TermOrganismDaemon:
 
         return None
 
-    def _run_existing_pipeline_sync(self, file_path: Path, mode: str, context: dict[str, Any]) -> dict[str, Any]:
-        if mode == "fast":
-            shortcut = self._try_fast_shortcut(file_path, context)
-            if shortcut is not None:
-                return shortcut
+    def _run_fast_shortcut_workspace_sync(self, original: Path, ws_target: Path, context: dict[str, Any]) -> dict[str, Any] | None:
+        result = self._try_fast_shortcut(ws_target, context)
+        if result is None:
+            return None
+        return self._copy_back_if_success(ws_target, original, result)
 
+    async def _run_fast_shortcut_with_pool(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any] | None:
+        await self._ensure_workspace_pool()
+        ws, meta = await self.workspace_pool.acquire()
+        try:
+            ws_target = await asyncio.to_thread(self._prepare_workspace_file, file_path, ws)
+            result = await asyncio.to_thread(self._run_fast_shortcut_workspace_sync, file_path, ws_target, context)
+            if result is None:
+                return None
+            return self._merge_workspace_meta(result, meta)
+        finally:
+            self.workspace_pool.release(ws, dirty=True)
+
+    def _run_existing_pipeline_sync(self, file_path: Path, mode: str, context: dict[str, Any]) -> dict[str, Any]:
         repro = run_python_file(str(file_path))
         error_text = str(getattr(repro, "stderr", "") or "")
         result = run_autofix(
@@ -285,6 +358,11 @@ class TermOrganismDaemon:
         return result
 
     async def _run_existing_pipeline(self, file_path: Path, mode: str, context: dict[str, Any]) -> dict[str, Any]:
+        if mode == "fast":
+            shortcut = await self._run_fast_shortcut_with_pool(file_path, context)
+            if shortcut is not None:
+                return shortcut
+
         return await asyncio.to_thread(
             self._run_existing_pipeline_sync,
             file_path,
