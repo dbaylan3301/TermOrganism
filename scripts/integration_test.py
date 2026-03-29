@@ -89,6 +89,13 @@ def run_test(name: str, cmd: str, checker):
     print(name)
     print(f"{'='*60}")
 
+    # test isolation: restore mutable fixtures before specific cases
+    if name == "Direct Fast V2 Import":
+        Path("/tmp/broken_import_hotforce.py").write_text(
+            'import definitely_missing_package_12345\n',
+            encoding="utf-8",
+        )
+
     start = time.time()
     ok, data, err = run_json(cmd)
     elapsed = (time.time() - start) * 1000.0
@@ -146,6 +153,18 @@ def check_fallback_fast_shortcut(data: dict):
     require(data, ["fallback_chain"], ["hot_force_failed", "fast"])
 
 
+
+def check_fast_v2_import(data: dict):
+    require(data, ["success"], True)
+    require(data, ["mode"], "fast_v2")
+    require(data, ["signature"], "importerror:no_module_named")
+    require(data, ["strategy"], "import_guard")
+    require(data, ["verify", "ok"], True)
+    require(data, ["fast_v2", "used"], True)
+    require(data, ["workspace_pool", "source"], "pool")
+    require(data, ["fallback_chain"], ["fast_v2"])
+
+
 def main() -> int:
     prepare_fixtures()
     daemon = start_daemon()
@@ -165,6 +184,11 @@ def main() -> int:
             "Fallback Fast Shortcut",
             "TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/fallback_case.py --json 2>/dev/null",
             check_fallback_fast_shortcut,
+        ),
+        (
+            "Direct Fast V2 Import",
+            "TERMORGANISM_FAST_V2=1 TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/broken_import_hotforce.py --json 2>/dev/null",
+            check_fast_v2_import,
         ),
     ]
 
