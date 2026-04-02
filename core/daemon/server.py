@@ -197,6 +197,50 @@ class TermOrganismDaemon:
             result["target_file"] = str(original)
         return result
 
+
+    def _agent_output(self, agent_results: list[dict[str, Any]], agent_name: str) -> dict[str, Any]:
+        for item in agent_results:
+            if item.get("agent") == agent_name:
+                return item.get("output", {}) or {}
+        return {}
+
+    def _effective_mode_from_agents(self, requested_mode: str, agent_results: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+        planner = self._agent_output(agent_results, "planner")
+        suggested = str(planner.get("suggested_mode") or requested_mode)
+
+        if requested_mode == "auto" and suggested in {"hot_force", "fast", "fast_v2"}:
+            return suggested, {
+                "requested_mode": requested_mode,
+                "effective_mode": suggested,
+                "planner_suggested_mode": suggested,
+                "planner_reason": planner.get("reason", ""),
+            }
+
+        return requested_mode, {
+            "requested_mode": requested_mode,
+            "effective_mode": requested_mode,
+            "planner_suggested_mode": suggested,
+            "planner_reason": planner.get("reason", ""),
+        }
+
+    def _apply_agent_postprocessing(self, result: dict[str, Any], agent_results: list[dict[str, Any]]) -> dict[str, Any]:
+        verifier = self._agent_output(agent_results, "verifier")
+        test_runner = self._agent_output(agent_results, "test_runner")
+
+        adjustment = float(verifier.get("confidence_adjustment", 0.0) or 0.0)
+        if adjustment and isinstance(result.get("confidence"), dict):
+            conf = result["confidence"]
+            base = float(conf.get("score", 0.0) or 0.0)
+            conf["score"] = min(1.0, base + adjustment)
+            conf.setdefault("factors", {})
+            conf["factors"]["agent_verifier"] = adjustment
+
+        required_checks = test_runner.get("required_checks", [])
+        if required_checks:
+            result["required_checks"] = required_checks
+
+        return result
+
     async def _run_agent_plan(self, *, target: Path, mode: str, context: dict[str, Any]) -> list[dict[str, Any]]:
         plan = [
             (
@@ -272,6 +316,12 @@ class TermOrganismDaemon:
         return self._copy_back_if_success(ws_target, original, result)
 
     async def _run_hot_force(self, file_path: Path, context: dict[str, Any]) -> dict[str, Any]:
+        signature = str(context.get("signature") or "").strip().lower()
+        if not signature:
+            signature = self._quick_signature(file_path, context)
+        if signature:
+            context = {**context, "signature": signature}
+
         policy_block = self._policy_gate(target=file_path, action="direct_write", confidence=0.97)
         if policy_block is not None:
             return policy_block
@@ -550,13 +600,20 @@ class TermOrganismDaemon:
                     context = self._build_context(file_path)
 
                 agent_results = await self._run_agent_plan(target=file_path, mode=mode, context=context)
+                effective_mode = mode
+                planner = next((x.get("output", {}) for x in agent_results if x.get("agent") == "planner"), {})
+                if mode == "auto":
+                    effective_mode = str(planner.get("suggested_mode") or "fast")
+                routing_meta = {"requested_mode": mode, "effective_mode": effective_mode, "planner_suggested_mode": str(planner.get("suggested_mode") or effective_mode), "planner_reason": planner.get("reason", "")}
+                mode = effective_mode
+                effective_mode, routing_meta = self._effective_mode_from_agents(mode, agent_results)
                 before_hooks = self._dispatch_hook(
                     "before_repair",
-                    {"file": str(file_path), "mode": mode, "context": context},
+                    {"file": str(file_path), "mode": effective_mode, "context": context},
                     {"socket": str(self.socket_path)},
                 )
 
-                if request.get("fast_path") == "hot_force":
+                if request.get("fast_path") == "hot_force" or effective_mode == "hot_force":
                     hot_ctx = {
                         "error_text": "Hot force signature request",
                         "traceback": [{"error_type": "HotForceSignature", "function": "hot_force"}],
@@ -564,15 +621,15 @@ class TermOrganismDaemon:
                     }
                     result = await self._run_hot_force(file_path, hot_ctx)
                     result["fallback_chain"] = ["hot_force"]
-                elif mode == "fast_v2":
+                elif effective_mode == "fast_v2":
                     result = await self._run_fast_v2(file_path, context)
                     result["fallback_chain"] = ["fast_v2"]
                 else:
-                    result = await self.fallback.repair(file_path, context, mode=mode)
+                    result = await self.fallback.repair(file_path, context, mode=effective_mode)
 
                 after_hooks = self._dispatch_hook(
                     "after_verify",
-                    {"file": str(file_path), "mode": mode, "result": result},
+                    {"file": str(file_path), "mode": effective_mode, "result": result},
                     {"socket": str(self.socket_path)},
                 )
 
@@ -590,6 +647,10 @@ class TermOrganismDaemon:
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
+        if isinstance(result, dict) and "agent_results" in result:
+            result = self._apply_agent_postprocessing(result, result.get("agent_results", []))
+            if "routing_meta" in locals():
+                result.setdefault("routing", routing_meta)
         elapsed = (time.monotonic() - start) * 1000.0
         if isinstance(result, dict):
             result.setdefault("daemon", {})

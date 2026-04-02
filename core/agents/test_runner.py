@@ -7,11 +7,13 @@ class TestRunnerAgent(BaseAgent):
     name = "test_runner"
 
     async def run(self, task: AgentTask) -> AgentResult:
+        command = task.payload.get("command", "")
         return AgentResult(
             agent=self.name,
             ok=True,
             output={
-                "command": task.payload.get("command", ""),
+                "command": command,
                 "status": "not_executed_yet",
+                "required_checks": [command] if command else [],
             },
         )

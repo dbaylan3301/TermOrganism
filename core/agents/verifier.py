@@ -7,11 +7,15 @@ class VerifierAgent(BaseAgent):
     name = "verifier"
 
     async def run(self, task: AgentTask) -> AgentResult:
+        checks = task.payload.get("checks", [])
+        adjustment = 0.02 if checks else 0.0
+
         return AgentResult(
             agent=self.name,
             ok=True,
             output={
                 "verified": True,
-                "checks": task.payload.get("checks", []),
+                "checks": checks,
+                "confidence_adjustment": adjustment,
             },
         )
