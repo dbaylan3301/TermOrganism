@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import time
 
 import json
 import os
@@ -7,6 +8,57 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+
+
+# --- daemon autostart helpers ---
+DAEMON_SOCKET = "/tmp/termorganism.sock"
+REPO_ROOT = Path(__file__).resolve().parent
+
+
+def _get_daemon_socket_path() -> str:
+    return os.environ.get("TERMORGANISM_DAEMON_SOCKET", DAEMON_SOCKET)
+
+
+def _wait_for_unix_socket(path: str, timeout: float = 8.0, interval: float = 0.1) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if os.path.exists(path):
+            try:
+                client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                client.settimeout(0.2)
+                client.connect(path)
+                client.close()
+                return True
+            except OSError:
+                pass
+        time.sleep(interval)
+    return False
+
+
+def _start_daemon_if_needed() -> bool:
+    sock_path = _get_daemon_socket_path()
+
+    if _wait_for_unix_socket(sock_path, timeout=0.25, interval=0.05):
+        return True
+
+    try:
+        if os.path.exists(sock_path):
+            os.unlink(sock_path)
+    except OSError:
+        pass
+
+    log_path = "/tmp/termorganism-daemon.log"
+    with open(log_path, "ab") as logf:
+        subprocess.Popen(
+            [sys.executable, "-m", "core.daemon.server"],
+            cwd=str(REPO_ROOT),
+            stdout=logf,
+            stderr=logf,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    return _wait_for_unix_socket(sock_path, timeout=8.0, interval=0.1)
 
 
 def _truthy(value: str | None) -> bool:
@@ -49,26 +101,35 @@ def _client_timeout() -> float:
 
 
 def _send_to_daemon(payload: dict, socket_path: str) -> dict:
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(_client_timeout())
-    try:
-        sock.connect(socket_path)
-        sock.sendall(json.dumps(payload).encode("utf-8"))
-        sock.shutdown(socket.SHUT_WR)
-        buf = b""
+    def _send_once() -> dict:
+        sock_path = _get_daemon_socket_path()
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.connect(sock_path)
+        client.sendall(json.dumps(payload).encode("utf-8"))
+        client.shutdown(socket.SHUT_WR)
+
+        chunks = []
         while True:
-            chunk = sock.recv(65536)
-            if not chunk:
+            part = client.recv(65536)
+            if not part:
                 break
-            buf += chunk
-    finally:
-        sock.close()
+            chunks.append(part)
+        client.close()
 
-    if not buf:
-        return {"success": False, "error": "empty daemon response"}
-    return json.loads(buf.decode("utf-8"))
+        buf = b"".join(chunks)
+        return json.loads(buf.decode("utf-8"))
 
-
+    try:
+        return _send_once()
+    except (FileNotFoundError, ConnectionRefusedError, OSError):
+        if not _start_daemon_if_needed():
+            return {
+                "success": False,
+                "mode": "python_cli",
+                "error": f"daemon socket not found and auto-start failed: {_get_daemon_socket_path()}",
+                "log": "/tmp/termorganism-daemon.log",
+            }
+        return _send_once()
 def _daemon_available() -> bool:
     return Path(_socket_path()).exists()
 
@@ -127,8 +188,8 @@ def _run_undo(argv: list[str]) -> int:
         print(json.dumps({"success": False, "error": "missing --undo-ref=<ref>"}))
         return 1
 
-    if not _daemon_available():
-        print(json.dumps({"success": False, "mode": "python_cli", "error": f"daemon socket not found: {_socket_path()}"}))
+    if not _daemon_available() and not _start_daemon_if_needed():
+        print(json.dumps({"success": False, "mode": "python_cli", "error": f"daemon socket not found and auto-start failed: {_get_daemon_socket_path()}", "log": "/tmp/termorganism-daemon.log"}))
         return 1
 
     result = _send_to_daemon(
@@ -152,8 +213,8 @@ def _run_repair(argv: list[str]) -> int:
         print(json.dumps({"success": False, "mode": "python_cli", "error": f"target does not exist: {target}"}))
         return 1
 
-    if not _daemon_available():
-        print(json.dumps({"success": False, "mode": "python_cli", "error": f"daemon socket not found: {_socket_path()}"}))
+    if not _daemon_available() and not _start_daemon_if_needed():
+        print(json.dumps({"success": False, "mode": "python_cli", "error": f"daemon socket not found and auto-start failed: {_get_daemon_socket_path()}", "log": "/tmp/termorganism-daemon.log"}))
         return 1
 
     mode = _mode_from_env(argv)
