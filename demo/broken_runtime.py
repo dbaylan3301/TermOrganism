@@ -1,3 +1,7 @@
 from pathlib import Path
 
-print(Path("logs/app.log").read_text())
+log_path = Path("logs/app.log")
+if log_path.exists():
+    print(log_path.read_text())
+else:
+    print("")

@@ -224,6 +224,80 @@ def _run_repair(argv: list[str]) -> int:
     return 0 if result.get("success") else 1
 
 
+# --- pretty output helpers ---
+def _json_load_loose(stdout: str):
+    text = (stdout or "").strip()
+    if not text:
+        return None
+
+    candidates = [text]
+
+    lines = text.splitlines()
+    cleaned = []
+    started = False
+    for line in lines:
+        stripped = line.lstrip()
+        if not started:
+            if stripped.startswith("{") or stripped.startswith("["):
+                started = True
+                cleaned.append(line)
+        else:
+            cleaned.append(line)
+    stripped_prefix = "\n".join(cleaned).strip()
+    if stripped_prefix and stripped_prefix != text:
+        candidates.append(stripped_prefix)
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        candidates.append(text[start:end + 1])
+
+    seen = set()
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            loaded = json.loads(candidate)
+            if isinstance(loaded, dict):
+                return loaded
+        except Exception:
+            continue
+    return None
+
+
+def _maybe_run_pretty_mode() -> None:
+    if "--pretty" not in sys.argv[1:]:
+        return
+
+    argv = [a for a in sys.argv[1:] if a != "--pretty"]
+    if "--json" not in argv:
+        argv.append("--json")
+
+    proc = subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), *argv],
+        capture_output=True,
+        text=True,
+    )
+
+    payload = _json_load_loose(proc.stdout)
+    if payload is None:
+        if proc.stdout:
+            print(proc.stdout, end="")
+        if proc.stderr:
+            print(proc.stderr, end="", file=sys.stderr)
+        raise SystemExit(proc.returncode or 1)
+
+    from core.ui.pretty import render_pretty
+    render_pretty(payload)
+
+    if proc.stderr.strip():
+        print(proc.stderr, end="", file=sys.stderr)
+
+    raise SystemExit(0 if payload.get("success") else 1)
+
+
 def main() -> int:
     argv = sys.argv
     if len(argv) < 2:
@@ -242,4 +316,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    _maybe_run_pretty_mode()
     raise SystemExit(main())
