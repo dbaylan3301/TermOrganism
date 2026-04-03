@@ -21,3 +21,8 @@ benchmarks/results/*.stderr.txt
 
 # local memory artifacts
 memory/TermOrganism/repair_events.jsonl
+.studio-venv/
+*.bak.synaptic_*
+*.bak.memory_ui_*
+*.bak.compact_memory_*
+*.bak.pretty_*

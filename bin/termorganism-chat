@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/TermOrganismGitFork
+exec python3 -m core.chat.chat_cli "$@"

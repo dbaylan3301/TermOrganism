@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from rich import box
@@ -20,6 +21,9 @@ class PrettyTheme:
     accent = "bright_cyan"
     info = "bright_blue"
     panel = "rgb(110,90,180)"
+    memory = "rgb(210,175,120)"
+    warm = "rgb(156,191,130)"
+    danger = "rgb(215,106,106)"
 
 
 def _status_style(success: bool) -> str:
@@ -41,6 +45,7 @@ def _table_panel(title: str, rows: list[tuple[str, str]]) -> Panel:
 
 def _activity_panel(payload: dict[str, Any]) -> Panel:
     lines: list[str] = []
+
     routing = payload.get("routing") or {}
     if routing:
         lines.append(
@@ -50,6 +55,16 @@ def _activity_panel(payload: dict[str, Any]) -> Panel:
         reason = routing.get("planner_reason")
         if reason:
             lines.append(f"[{PrettyTheme.dim}]reason[/]: {reason}")
+
+    synaptic = payload.get("synaptic") or {}
+    if synaptic:
+        memory_state = "matched" if synaptic.get("matched") else "cold"
+        lines.append(f"[{PrettyTheme.memory}]memory[/]: {memory_state}")
+        lines.append(
+            f"[{PrettyTheme.memory}]prior[/]: "
+            f"{synaptic.get('route', '-')} = {synaptic.get('prior', 0.0)}"
+        )
+        lines.append(f"[{PrettyTheme.dim}]seen_before[/]: {synaptic.get('seen_total', 0)}")
 
     for agent in payload.get("agent_results", [])[:8]:
         name = str(agent.get("agent", "?"))
@@ -61,18 +76,77 @@ def _activity_panel(payload: dict[str, Any]) -> Panel:
     before_hooks = payload.get("before_repair_hooks") or []
     after_hooks = payload.get("after_verify_hooks") or []
     if before_hooks or after_hooks:
-        lines.append(f"[{PrettyTheme.info}]hooks[/]: before={len(before_hooks)} after={len(after_hooks)}")
+        lines.append(
+            f"[{PrettyTheme.info}]hooks[/]: before={len(before_hooks)} after={len(after_hooks)}"
+        )
 
     if not lines:
         lines.append("[grey62]no activity[/]")
 
-    return Panel("\n".join(lines), title="Recent Activity", border_style=PrettyTheme.panel, box=box.ROUNDED)
+    return Panel(
+        "\n".join(lines),
+        title="Recent Activity",
+        border_style=PrettyTheme.panel,
+        box=box.ROUNDED,
+    )
 
 
 def _checks_panel(payload: dict[str, Any]) -> Panel:
     checks = payload.get("required_checks") or []
-    body = "[grey62]No required checks[/]" if not checks else "\n".join(f"• {item}" for item in checks)
+    if not checks:
+        body = "[grey62]No required checks[/]"
+    else:
+        body = "\n".join(f"• {item}" for item in checks)
     return Panel(body, title="Required Checks", border_style=PrettyTheme.panel, box=box.ROUNDED)
+
+
+def _arrow_for_delta(delta: float) -> str:
+    if delta > 0:
+        return "↑"
+    if delta < 0:
+        return "↓"
+    return "→"
+
+
+def _memory_panel(payload: dict[str, Any]) -> Panel:
+    synaptic = payload.get("synaptic") or {}
+    update = payload.get("synaptic_memory_update") or {}
+    verbose = os.environ.get("TERMORGANISM_VERBOSE_MEMORY", "").strip() == "1"
+
+    rows: list[tuple[str, str]] = []
+
+    if synaptic:
+        rows.append(("memory", "matched" if synaptic.get("matched") else "cold"))
+        rows.append(("route", str(synaptic.get("route", "-"))))
+        rows.append(("prior", str(synaptic.get("prior", "-"))))
+        rows.append(("seen", str(synaptic.get("seen_total", "-"))))
+
+    if update:
+        delta = float(update.get("delta", 0.0) or 0.0)
+        weight = update.get("error_route_weight", "-")
+        rows.append(("learning", f"{_arrow_for_delta(delta)} {delta}"))
+        rows.append(("weight", str(weight)))
+
+    if verbose and synaptic:
+        evidence = synaptic.get("evidence") or {}
+        if evidence:
+            for key, value in evidence.items():
+                rows.append((f"edge.{key}", str(value)))
+        if update:
+            rows.append(("update.route", str(update.get("route", "-"))))
+            rows.append(("update.success", str(update.get("success", "-"))))
+
+    if not rows:
+        rows = [
+            ("memory", "cold"),
+            ("prior", "-"),
+            ("update", "none"),
+        ]
+
+    title = "Memory Learning"
+    if verbose:
+        title += " (Verbose)"
+    return _table_panel(title, rows)
 
 
 def _header(payload: dict[str, Any]) -> Panel:
@@ -115,12 +189,24 @@ def render_pretty(payload: dict[str, Any]) -> None:
         ],
     )
 
+    activity = _activity_panel(payload)
+    memory = _memory_panel(payload)
+
     console.print(_header(payload))
     console.print()
-    console.print(Columns([summary, _activity_panel(payload)], expand=True, equal=True))
+    console.print(Columns([summary, activity], expand=True, equal=True))
     console.print()
     console.print(_checks_panel(payload))
+    console.print()
+    console.print(memory)
 
     if not success and payload.get("error"):
         console.print()
-        console.print(Panel(str(payload["error"]), title="Error", border_style=PrettyTheme.err, box=box.ROUNDED))
+        console.print(
+            Panel(
+                str(payload["error"]),
+                title="Error",
+                border_style=PrettyTheme.err,
+                box=box.ROUNDED,
+            )
+        )

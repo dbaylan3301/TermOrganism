@@ -198,6 +198,66 @@ class TermOrganismDaemon:
         return result
 
 
+    def _repo_type_for_target(self, target: Path, context: dict[str, Any]) -> str:
+        explicit = str(context.get("repo_type") or "").strip()
+        if explicit:
+            return explicit
+        suffix = target.suffix.lower()
+        if suffix == ".py":
+            return "python_cli"
+        if suffix in {".js", ".ts"}:
+            return "js_cli"
+        return "generic"
+
+    def _ensure_synaptic_context(self, target: Path, context: dict[str, Any]) -> dict[str, Any]:
+        updated = dict(context or {})
+        signature = str(updated.get("signature") or "").strip().lower()
+        if not signature:
+            try:
+                signature = str(self._quick_signature(target, updated) or "").strip().lower()
+            except Exception:
+                signature = ""
+        if signature:
+            updated["signature"] = signature
+        updated.setdefault("repo_type", self._repo_type_for_target(target, updated))
+        return updated
+
+    def _apply_synaptic_metadata(self, result: dict[str, Any], agent_results: list[dict[str, Any]]) -> dict[str, Any]:
+        planner = self._agent_output(agent_results, "planner")
+        synaptic = planner.get("synaptic")
+        if isinstance(synaptic, dict) and synaptic:
+            result["synaptic"] = synaptic
+        return result
+
+    def _remember_synaptic_result(
+        self,
+        *,
+        result: dict[str, Any],
+        context: dict[str, Any],
+        effective_mode: str,
+    ) -> dict[str, Any] | None:
+        signature = str(context.get("signature") or result.get("signature") or "").strip().lower()
+        if not signature:
+            return None
+
+        route = str(effective_mode or result.get("mode") or "").strip() or "unknown"
+        repo_type = str(context.get("repo_type") or "").strip() or None
+        file_path = result.get("target_file") or context.get("file_path")
+
+        try:
+            from core.memory.synaptic_hooks import remember_from_result
+            return remember_from_result(
+                result=result,
+                signature=signature,
+                route=route,
+                file_path=str(file_path) if file_path else None,
+                repo_type=repo_type,
+                intent="repair",
+            )
+        except Exception:
+            return None
+
+
     def _agent_output(self, agent_results: list[dict[str, Any]], agent_name: str) -> dict[str, Any]:
         for item in agent_results:
             if item.get("agent") == agent_name:
@@ -247,7 +307,13 @@ class TermOrganismDaemon:
                 "planner",
                 AgentTask(
                     name="repair_plan",
-                    payload={"target": str(target), "intent": mode, "error_text": context.get("error_text", "")},
+                    payload={
+                        "target": str(target),
+                        "intent": mode,
+                        "error_text": context.get("error_text", ""),
+                        "signature": context.get("signature", ""),
+                        "repo_type": context.get("repo_type", ""),
+                    },
                 ),
             ),
             (
@@ -588,6 +654,7 @@ class TermOrganismDaemon:
 
             context = request.get("context") or {}
             mode = str(request.get("mode") or "auto")
+            context = self._ensure_synaptic_context(file_path, context)
 
             if not file_path.exists():
                 result = {
@@ -649,8 +716,21 @@ class TermOrganismDaemon:
 
         if isinstance(result, dict) and "agent_results" in result:
             result = self._apply_agent_postprocessing(result, result.get("agent_results", []))
+            result = self._apply_synaptic_metadata(result, agent_results)
+            synaptic_memory_update = self._remember_synaptic_result(
+                result=result,
+                context=context,
+                effective_mode=effective_mode,
+            )
+            if synaptic_memory_update is not None:
+                result["synaptic_memory_update"] = synaptic_memory_update
+
             if "routing_meta" in locals():
                 result.setdefault("routing", routing_meta)
+                if isinstance(result.get("synaptic"), dict):
+                    result["routing"]["synaptic_used"] = bool(result["synaptic"].get("used", False))
+                    result["routing"]["synaptic_prior"] = float(result["synaptic"].get("prior", 0.0) or 0.0)
+                    result["routing"]["synaptic_seen_total"] = int(result["synaptic"].get("seen_total", 0) or 0)
         elapsed = (time.monotonic() - start) * 1000.0
         if isinstance(result, dict):
             result.setdefault("daemon", {})
