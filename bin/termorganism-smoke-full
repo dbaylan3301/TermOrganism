@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/TermOrganismGitFork
+
+echo "[1/5] live"
+timeout 2 ./bin/termorganism-live /tmp/live_demo.py || true
+
+echo
+echo "[2/5] pre-save"
+./bin/termorganism-pre-save /tmp/live_demo.py --json || true
+
+echo
+echo "[3/5] explain-route"
+./bin/termorganism-explain-route /tmp/whisper_demo.py || true
+
+echo
+echo "[4/5] benchmark"
+./bin/termorganism-benchmark-proactive || true
+
+echo
+echo "[5/5] fix-preview"
+./bin/termorganism-fix-preview /tmp/action_demo2.py || true

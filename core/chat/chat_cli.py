@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import argparse
 
 from .context import detect_context
@@ -8,21 +10,84 @@ from .interpreter import interpret_message
 from .narrator import render_response
 from .planner import build_plan
 from .session import load_session, save_session, update_session
+from .pause_layer import evaluate_reflective_pause
+from core.context.intent_context import infer_intent_context
+from core.watch.predictive_engine import predictive_whispers_for_target, record_predictive_repair_bridge, predictive_bridge_summary
+from core.context.bridge_bias import choose_bridge_bias
+from core.ui.animations import run_with_thinking, phases_for_goal
 
 
-def process_message(message: str, *, session_id: str = "default") -> int:
+async def process_message_async(message: str, *, session_id: str = "default") -> int:
     session = load_session(session_id)
     intent = interpret_message(message, session)
     ctx = detect_context()
+    intent_ctx = infer_intent_context(ctx)
+    predictive_whispers = predictive_whispers_for_target(
+        target_path=intent.target_hint,
+        cwd=str(ctx.repo_root or ctx.cwd),
+        focus=str(intent_ctx.get("focus", "general_runtime")),
+        limit=4,
+    )
 
-    plan = build_plan(intent, ctx, session)
-    response = execute_plan(intent, plan, ctx, session)
+    bridge_seed = predictive_bridge_summary(
+        target_path=intent.target_hint,
+        cwd=str(ctx.repo_root or ctx.cwd),
+        focus=str(intent_ctx.get("focus", "general_runtime")),
+        signature=None,
+        limit=4,
+    )
+    bridge_bias = choose_bridge_bias(bridge_seed)
+
+    plan = build_plan(intent, ctx, session, intent_ctx, predictive_whispers, bridge_bias)
+    pause = evaluate_reflective_pause(intent, plan, ctx, session, intent_ctx, predictive_whispers)
+
+    if pause.get("force_preview"):
+        plan["preview_only"] = True
+        plan["confirmation_required"] = True
+        steps = list(plan.get("steps", []))
+        marker = "reflective pause uygulandı; önce preview üretilecek"
+        if marker not in steps:
+            steps.insert(1, marker)
+        plan["steps"] = steps
+    response = await run_with_thinking(
+        asyncio.to_thread(execute_plan, intent, plan, ctx, session),
+        title="TermOrganism Thinking",
+        phases=phases_for_goal(intent.goal),
+    )
 
     response["message"] = message
     response["intent"] = intent.goal
     response["confidence"] = intent.confidence
     response["flags"] = intent.flags
     response["target_hint"] = intent.target_hint
+    response["intent_context"] = intent_ctx
+    response["reflective_pause"] = pause
+    response["predictive_whispers"] = predictive_whispers
+    response["bridge_bias"] = bridge_bias
+
+    repair_obj = response.get("repair") or {}
+    repair_result = repair_obj.get("result") if isinstance(repair_obj, dict) else None
+    if isinstance(repair_result, dict):
+        syn = repair_result.get("synaptic") or {}
+        record_predictive_repair_bridge(
+            target_path=intent.target_hint,
+            cwd=str(ctx.repo_root or ctx.cwd),
+            focus=str(intent_ctx.get("focus", "general_runtime")),
+            signature=str(repair_result.get("signature", "repair:unknown")),
+            route=str(repair_result.get("mode") or repair_result.get("strategy") or "-"),
+            success=bool(repair_obj.get("ok")),
+            predictive_whispers=predictive_whispers,
+            synaptic_route=str(syn.get("route", "-")),
+            synaptic_prior=float(syn.get("prior", 0.0) or 0.0),
+            memory_matched=bool(syn.get("matched", False)),
+        )
+        response["predictive_repair_bridge"] = predictive_bridge_summary(
+            target_path=intent.target_hint,
+            cwd=str(ctx.repo_root or ctx.cwd),
+            focus=str(intent_ctx.get("focus", "general_runtime")),
+            signature=str(repair_result.get("signature", "repair:unknown")),
+            limit=4,
+        )
 
     update_session(
         session,
@@ -37,7 +102,7 @@ def process_message(message: str, *, session_id: str = "default") -> int:
     return 0 if response.get("ok") else 1
 
 
-def repl(session_id: str = "default") -> int:
+async def repl_async(session_id: str = "default") -> int:
     print("TermOrganism Chat")
     print("Yaz ve devam et. Çıkmak için: exit / quit")
     while True:
@@ -50,7 +115,7 @@ def repl(session_id: str = "default") -> int:
             continue
         if message.lower() in {"exit", "quit", ":q"}:
             return 0
-        process_message(message, session_id=session_id)
+        await process_message_async(message, session_id=session_id)
 
 
 def main() -> int:
@@ -60,8 +125,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.message:
-        return process_message(" ".join(args.message), session_id=args.session)
-    return repl(session_id=args.session)
+        return asyncio.run(process_message_async(" ".join(args.message), session_id=args.session))
+    return asyncio.run(repl_async(session_id=args.session))
 
 
 if __name__ == "__main__":

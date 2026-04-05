@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+def build_proactive_signals(
+    *,
+    intent_focus: str | None = None,
+    intent_routes: list[str] | None = None,
+    intent_confidence: float | None = None,
+    intent_reason: str | None = None,
+    bridge_reason: str | None = None,
+    bridge_route: str | None = None,
+    bridge_score: float | None = None,
+    whisper_kind: str | None = None,
+    whisper_priority: float | None = None,
+    whisper_message: str | None = None,
+    whisper_reason: str | None = None,
+    whisper_verify_emphasis: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "intent_focus": intent_focus or "",
+        "intent_routes": list(intent_routes or []),
+        "intent_confidence": float(intent_confidence or 0.0),
+        "intent_reason": intent_reason or "",
+        "bridge_reason": bridge_reason or "",
+        "bridge_route": bridge_route or "",
+        "bridge_score": float(bridge_score or 0.0),
+        "whisper_kind": whisper_kind or "",
+        "whisper_priority": float(whisper_priority or 0.0),
+        "whisper_message": whisper_message or "",
+        "whisper_reason": whisper_reason or "",
+        "whisper_verify_emphasis": bool(whisper_verify_emphasis or False),
+    }
+
+
+def enrich_planner_reason(
+    base_reason: str,
+    *,
+    intent_reason: str | None = None,
+    bridge_reason: str | None = None,
+    whisper_reason: str | None = None,
+) -> str:
+    base = str(base_reason or "").strip()
+
+    parts: list[str] = []
+    if base:
+        for frag in [x.strip() for x in base.split(" + ")]:
+            if frag:
+                parts.append(frag)
+
+    if intent_reason:
+        parts.append("intent-aware context")
+    if bridge_reason:
+        parts.append("predictive→repair bridge")
+    if whisper_reason:
+        parts.append("live whisper")
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in parts:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+
+    return " + ".join(out)

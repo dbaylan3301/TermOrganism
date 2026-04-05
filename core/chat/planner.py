@@ -6,14 +6,55 @@ from .interpreter import ChatIntent
 from .session import ChatSessionState
 
 
-def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, Any]:
+def _preload_has(intent_context: dict[str, Any] | None, key: str) -> bool:
+    routes = (intent_context or {}).get("preload_routes") or []
+    return key in routes
+
+
+def _top_whisper(predictive_whispers: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    if not predictive_whispers:
+        return None
+    return sorted(
+        predictive_whispers,
+        key=lambda x: (float(x.get("priority", 0.0)), float(x.get("confidence", 0.0))),
+        reverse=True,
+    )[0]
+
+
+def build_plan(
+    intent: ChatIntent,
+    ctx,
+    session: ChatSessionState,
+    intent_context: dict[str, Any] | None = None,
+    predictive_whispers: list[dict[str, Any]] | None = None,
+    bridge_bias: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     goal = intent.goal
     explain_first = bool(intent.flags.get("explain"))
     auto_apply = bool(intent.flags.get("auto"))
     safe_mode = bool(intent.flags.get("safe"))
 
+    narrow_test_first = _preload_has(intent_context, "narrow_test_first")
+    safe_preview = _preload_has(intent_context, "safe_preview")
+    verify_first = _preload_has(intent_context, "verify_first")
+
+    top = _top_whisper(predictive_whispers)
+    top_priority = float((top or {}).get("priority", 0.0))
+    top_kind = str((top or {}).get("kind", ""))
+    top_msg = str((top or {}).get("message", ""))
+
+    predictive_repair_preview = top_priority >= 0.70 and top_kind in {"import-risk", "path-risk", "syntax-risk"}
+    predictive_narrow_tests = top_priority >= 0.72 and top_kind in {"syntax-risk", "import-risk", "path-risk"}
+    predictive_verify_emphasis = top_priority >= 0.78
+
+    bridge_bias = bridge_bias or {}
+    bridge_preview_bias = bool(bridge_bias.get("preview_bias", False))
+    bridge_narrow_bias = bool(bridge_bias.get("narrow_test_bias", False))
+    bridge_verify_emphasis = bool(bridge_bias.get("verify_emphasis", False))
+    bridge_reason = str(bridge_bias.get("reason", "") or "")
+    recommended_route = bridge_bias.get("recommended_route")
+
     if goal == "confirm_pending":
-        pending = session.pending_action or {}
         return {
             "goal": "confirm_pending",
             "steps": [
@@ -21,8 +62,10 @@ def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, 
                 "onaylanan işi güvenli sınırlar içinde çalıştıracağım",
                 "sonucu açıklayacağım",
             ],
-            "risk": pending.get("risk", "medium"),
+            "risk": "medium",
             "confirmation_required": False,
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     if goal == "cancel_pending":
@@ -34,6 +77,8 @@ def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, 
             ],
             "risk": "low",
             "confirmation_required": False,
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     if goal == "repo_summary":
@@ -46,6 +91,8 @@ def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, 
             ],
             "risk": "low",
             "confirmation_required": False,
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     if goal == "repo_status":
@@ -57,30 +104,64 @@ def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, 
             ],
             "risk": "low",
             "confirmation_required": False,
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     if goal in {"run_tests", "run_tests_narrow"}:
+        steps = [
+            "repo bağlamına göre test stratejisi seçeceğim",
+            "gerekirse daha dar veya kısa koşu kullanacağım",
+            "timeout veya fail durumunu temiz biçimde özetleyeceğim",
+        ]
+
+        narrow_bias = bool(
+            (narrow_test_first and goal == "run_tests")
+            or (predictive_narrow_tests and goal == "run_tests")
+            or (bridge_narrow_bias and goal == "run_tests")
+        )
+
+        if narrow_test_first and goal == "run_tests":
+            steps.insert(1, "intent-aware preload dar test stratejisini öne aldı")
+        if predictive_narrow_tests and goal == "run_tests":
+            steps.insert(1, f"predictive whisper dar test bias verdi: {top_msg}")
+        if bridge_narrow_bias and goal == "run_tests":
+            steps.insert(1, f"predictive→repair bridge dar test bias verdi: {bridge_reason}")
+
+        if verify_first or predictive_verify_emphasis or bridge_verify_emphasis:
+            steps.append("verify sinyalini broad koşudan önce değerlendireceğim")
+
         return {
             "goal": goal,
-            "steps": [
-                "repo bağlamına göre test stratejisi seçeceğim",
-                "gerekirse daha dar veya kısa koşu kullanacağım",
-                "timeout veya fail durumunu temiz biçimde özetleyeceğim",
-            ],
+            "steps": steps,
             "risk": "low",
             "confirmation_required": False,
+            "narrow_first_bias": narrow_bias,
+            "predictive_bias_reason": top_msg if predictive_narrow_tests else "",
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     if goal == "run_project":
+        steps = [
+            "repo tipini ve giriş noktasını çıkaracağım",
+            "uygun çalıştırma komutunu seçeceğim",
+            "komutu çalıştırıp sonucu döneceğim",
+        ]
+        if safe_preview or verify_first or predictive_verify_emphasis or bridge_verify_emphasis:
+            steps.insert(1, "giriş noktası doğrulaması ve açıklama-first yaklaşımı öne alındı")
+        if top and top_priority >= 0.80:
+            steps.append(f"predictive whisper dikkate alındı: {top_msg}")
+        if bridge_reason:
+            steps.append(f"predictive→repair bridge dikkate alındı: {bridge_reason}")
+
         return {
             "goal": goal,
-            "steps": [
-                "repo tipini ve giriş noktasını çıkaracağım",
-                "uygun çalıştırma komutunu seçeceğim",
-                "komutu çalıştırıp sonucu döneceğim",
-            ],
+            "steps": steps,
             "risk": "medium",
-            "confirmation_required": safe_mode,
+            "confirmation_required": safe_mode or safe_preview or predictive_verify_emphasis or bridge_verify_emphasis,
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     if goal in {"repair", "diagnose"}:
@@ -90,14 +171,42 @@ def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, 
             "sonucu insan diliyle özetleyeceğim",
         ]
         confirmation_required = explain_first and not auto_apply
+
         if confirmation_required:
             steps.insert(1, "önce güvenli repair planını önizleme olarak sunacağım")
+
+        if safe_preview and not auto_apply:
+            confirmation_required = True
+            steps.insert(1, "intent-aware preload güvenli preview akışını öne aldı")
+
+        if predictive_repair_preview and not auto_apply:
+            confirmation_required = True
+            steps.insert(1, f"predictive whisper repair preview bias verdi: {top_msg}")
+
+        if bridge_preview_bias and not auto_apply:
+            confirmation_required = True
+            steps.insert(1, f"predictive→repair bridge preview bias verdi: {bridge_reason}")
+
+        if verify_first or predictive_verify_emphasis or bridge_verify_emphasis:
+            steps.append("repair sonrası verify sinyalini özellikle vurgulayacağım")
+
+        if recommended_route:
+            steps.append(f"önerilen geçmiş route: {recommended_route}")
+
         return {
             "goal": goal,
             "steps": steps,
             "risk": "medium",
             "confirmation_required": confirmation_required,
             "preview_only": confirmation_required,
+            "safe_preview_bias": bool(
+                (safe_preview and not auto_apply)
+                or (predictive_repair_preview and not auto_apply)
+                or (bridge_preview_bias and not auto_apply)
+            ),
+            "predictive_bias_reason": top_msg if predictive_repair_preview else "",
+            "bridge_bias_reason": bridge_reason,
+            "recommended_route": recommended_route,
         }
 
     return {
@@ -109,4 +218,6 @@ def build_plan(intent: ChatIntent, ctx, session: ChatSessionState) -> dict[str, 
         ],
         "risk": "low",
         "confirmation_required": False,
+        "bridge_bias_reason": bridge_reason,
+        "recommended_route": recommended_route,
     }

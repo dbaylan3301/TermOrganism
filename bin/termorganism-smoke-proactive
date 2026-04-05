@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/TermOrganismGitFork
+
+pkill -f "python3 -m core.daemon.server" >/dev/null 2>&1 || true
+rm -f /tmp/termorganism.sock
+
+echo "[1/3] JSON proactive fields"
+TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/whisper_demo.py --json | python3 -m json.tool | rg -n "routing|proactive_signals|whisper_|intent_|bridge_|effective_mode|planner_reason|suggested_mode" || true
+
+echo
+echo "[2/3] Pretty proactive panel"
+TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/whisper_demo.py --pretty || true
+
+echo
+echo "[3/3] Watch snapshot"
+./bin/termorganism-watch /tmp/whisper_demo.py || true

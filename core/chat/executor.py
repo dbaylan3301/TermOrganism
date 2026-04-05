@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .session import ChatSessionState
+from core.context.semantic_scent import build_semantic_scent
 
 
 def _run(cmd: str, cwd: str | None = None, timeout: int = 90) -> dict:
@@ -222,6 +223,17 @@ def _run_test_strategy(ctx, *, narrow: bool = False) -> dict:
     }
 
 
+def _maybe_scent(ctx, *, target_hint: str | None = None, signature: str | None = None):
+    try:
+        return build_semantic_scent(
+            repo_root=str(ctx.repo_root or ctx.cwd),
+            target_path=target_hint,
+            signature=signature,
+        )
+    except Exception:
+        return None
+
+
 def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -> dict[str, Any]:
     goal = plan["goal"]
     response: dict[str, Any] = {
@@ -264,6 +276,11 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
                 )
             else:
                 response["answer"] = repair.get("error", "repair başarısız")
+            response["semantic_scent"] = _maybe_scent(
+                ctx,
+                target_hint=target,
+                signature=((repair.get("result") or {}).get("signature") if repair.get("ok") else "repair:failed"),
+            )
             return response
 
         if kind == "run_tests_narrow":
@@ -286,6 +303,11 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
                 if not body and res["ok"]:
                     body = "Daha dar test koşusu başarıyla tamamlandı, ek çıktı üretmedi."
                 response["answer"] = f"Strateji: {test_run['reason']}\nKomut: {test_run['command']}\n\n{body}"
+            response["semantic_scent"] = _maybe_scent(
+                ctx,
+                target_hint=ctx.cwd,
+                signature=("tests:narrow_timeout" if res.get("timed_out") else "tests:narrow"),
+            )
             return response
 
         response["ok"] = False
@@ -306,12 +328,16 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
         return response
 
     if goal in {"run_tests", "run_tests_narrow"}:
-        narrow = goal == "run_tests_narrow"
+        narrow = bool(goal == "run_tests_narrow" or plan.get("narrow_first_bias"))
         test_run = _run_test_strategy(ctx, narrow=narrow)
         res = test_run["result"]
 
         response["command"] = test_run["command"]
-        response["strategy_reason"] = test_run["reason"]
+        predictive_reason = str(plan.get("predictive_bias_reason", "") or "")
+        strategy_reason = test_run["reason"]
+        if predictive_reason:
+            strategy_reason += f" | predictive_bias={predictive_reason}"
+        response["strategy_reason"] = strategy_reason
         response["ok"] = res["ok"]
         response["timed_out"] = bool(res.get("timed_out"))
         if narrow:
@@ -333,12 +359,22 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
                 }
                 response["answer"] += "\n\nİstersen 'daha dar koş' ya da sadece 'tamam' diyerek daha dar stratejiye geçebilirim."
                 response["session_note"] = "tests timed out; narrow run is pending"
+            response["semantic_scent"] = _maybe_scent(
+                ctx,
+                target_hint=ctx.cwd,
+                signature=("tests:narrow_timeout" if narrow else "tests:timeout"),
+            )
             return response
 
         body = res["stdout"] if res["stdout"] else res["stderr"]
         if not body and res["ok"]:
             body = "Test komutu başarıyla tamamlandı, ek çıktı üretmedi."
         response["answer"] = f"Strateji: {test_run['reason']}\nKullanılan komut: {test_run['command']}\n\n{body}"
+        response["semantic_scent"] = _maybe_scent(
+            ctx,
+            target_hint=ctx.cwd,
+            signature=("tests:narrow" if narrow else "tests"),
+        )
         return response
 
     if goal == "run_project":
@@ -383,6 +419,11 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
                 f"İptal etmek için 'iptal' yaz."
             )
             response["session_note"] = f"repair preview pending for {target}"
+            response["semantic_scent"] = _maybe_scent(
+                ctx,
+                target_hint=target,
+                signature="repair:preview",
+            )
             return response
 
         repair = _repair_with_termorganism(target)
@@ -399,6 +440,11 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
             )
         else:
             response["answer"] = repair.get("error", "repair başarısız")
+        response["semantic_scent"] = _maybe_scent(
+            ctx,
+            target_hint=target,
+            signature=((repair.get("result") or {}).get("signature") if repair.get("ok") else "repair:failed"),
+        )
         return response
 
     response["ok"] = True

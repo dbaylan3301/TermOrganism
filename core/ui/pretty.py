@@ -56,6 +56,7 @@ def _activity_panel(payload: dict[str, Any]) -> Panel:
         if reason:
             lines.append(f"[{PrettyTheme.dim}]reason[/]: {reason}")
 
+
     synaptic = payload.get("synaptic") or {}
     if synaptic:
         memory_state = "matched" if synaptic.get("matched") else "cold"
@@ -90,6 +91,99 @@ def _activity_panel(payload: dict[str, Any]) -> Panel:
         box=box.ROUNDED,
     )
 
+
+
+def _proactive_panel(payload: dict[str, Any]) -> Panel:
+    routing = payload.get("routing") or {}
+    p = payload.get("proactive_signals") or {}
+
+    rows: list[tuple[str, str]] = []
+
+    intent_focus = p.get("intent_focus") or routing.get("intent_focus")
+    if intent_focus:
+        rows.append(("intent_focus", str(intent_focus)))
+
+    intent_routes = p.get("intent_routes") or routing.get("intent_preload_routes") or []
+    if intent_routes:
+        rows.append(("intent_routes", ", ".join(intent_routes[:4])))
+
+    intent_confidence = p.get("intent_confidence")
+    if intent_confidence not in (None, "", 0, 0.0):
+        rows.append(("intent_conf", str(intent_confidence)))
+
+    intent_reason = p.get("intent_reason") or routing.get("intent_reason")
+    if intent_reason:
+        rows.append(("intent_reason", str(intent_reason)))
+
+    bridge_route = p.get("bridge_route") or routing.get("bridge_recommended_route")
+    if bridge_route:
+        rows.append(("bridge_route", str(bridge_route)))
+
+    bridge_score = p.get("bridge_score")
+    if bridge_score not in (None, "", 0, 0.0):
+        rows.append(("bridge_score", str(bridge_score)))
+
+    bridge_reason = p.get("bridge_reason") or routing.get("bridge_reason")
+    if bridge_reason:
+        rows.append(("bridge_reason", str(bridge_reason)))
+
+    whisper_kind = p.get("whisper_kind") or routing.get("whisper_kind")
+    if whisper_kind:
+        rows.append(("whisper_kind", str(whisper_kind)))
+
+    whisper_priority = p.get("whisper_priority")
+    if whisper_priority not in (None, "", 0, 0.0):
+        rows.append(("whisper_prio", str(whisper_priority)))
+
+    whisper_message = p.get("whisper_message") or routing.get("whisper_message")
+    if whisper_message:
+        rows.append(("whisper", str(whisper_message)))
+
+    whisper_reason = p.get("whisper_reason") or routing.get("whisper_reason")
+    if whisper_reason:
+        rows.append(("whisper_reason", str(whisper_reason)))
+
+    if not rows:
+        return Panel("[grey62]No proactive signals[/]", title="Proactive Signals", border_style=PrettyTheme.panel, box=box.ROUNDED)
+
+    return _table_panel("Proactive Signals", rows)
+
+
+def _arbitration_panel(payload: dict[str, Any]) -> Panel:
+    arbitration = payload.get("route_arbitration") or {}
+    candidates = payload.get("route_candidates") or []
+    routing = payload.get("routing") or {}
+
+    rows: list[tuple[str, str]] = []
+
+    winner = arbitration.get("winner") or {}
+    final_route = arbitration.get("final_route") or routing.get("effective_mode")
+    reason = arbitration.get("reason") or routing.get("arbitration_reason")
+    count = arbitration.get("candidate_count")
+    if count in (None, "", 0):
+        count = routing.get("arbitration_candidate_count")
+    winner_route = winner.get("route") or routing.get("arbitration_winner")
+
+    if final_route:
+        rows.append(("final_route", str(final_route)))
+    if winner_route:
+        rows.append(("winner", str(winner_route)))
+    if winner:
+        rows.append(("winner_source", str(winner.get("source", "-"))))
+        rows.append(("winner_score", f"{winner.get('score', '-')}/{winner.get('adjusted_score', '-')}"))
+        rows.append(("winner_risk", str(winner.get("risk", "-"))))
+    if count not in (None, ""):
+        rows.append(("candidate_count", str(count)))
+    if reason:
+        rows.append(("reason", str(reason)))
+
+    for idx, item in enumerate(candidates[:4], start=1):
+        rows.append((f"cand_{idx}", f"{item.get('route')} [{item.get('source')}] score={item.get('score')} adj={item.get('adjusted_score')} risk={item.get('risk')}"))
+
+    if not rows:
+        return Panel("[grey62]No arbitration data[/]", title="Route Arbitration", border_style=PrettyTheme.panel, box=box.ROUNDED)
+
+    return _table_panel("Route Arbitration", rows)
 
 def _checks_panel(payload: dict[str, Any]) -> Panel:
     checks = payload.get("required_checks") or []
@@ -195,6 +289,10 @@ def render_pretty(payload: dict[str, Any]) -> None:
     console.print(_header(payload))
     console.print()
     console.print(Columns([summary, activity], expand=True, equal=True))
+    console.print()
+    console.print(_proactive_panel(payload))
+    console.print()
+    console.print(_arbitration_panel(payload))
     console.print()
     console.print(_checks_panel(payload))
     console.print()

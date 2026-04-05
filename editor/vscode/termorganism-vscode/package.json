@@ -1,0 +1,69 @@
+{
+  "name": "termorganism-vscode",
+  "displayName": "TermOrganism",
+  "description": "Predictive whispers, LSP diagnostics, code actions, and pre-save checks for TermOrganism",
+  "version": "0.2.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onLanguage:python",
+    "onCommand:termorganism.refreshWhispers",
+    "onCommand:termorganism.runPreSaveCheck",
+    "onCommand:termorganism.previewFixes"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "termorganism.refreshWhispers",
+        "title": "TermOrganism: Refresh Whispers"
+      },
+      {
+        "command": "termorganism.runPreSaveCheck",
+        "title": "TermOrganism: Run Pre-Save Check"
+      },
+      {
+        "command": "termorganism.previewFixes",
+        "title": "TermOrganism: Preview Fixes"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "termorganism",
+          "title": "TermOrganism",
+          "icon": "media/organism.svg"
+        }
+      ]
+    },
+    "views": {
+      "termorganism": [
+        {
+          "id": "termorganismWhispers",
+          "name": "Whispers"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "TermOrganism",
+      "properties": {
+        "termorganism.repoRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the TermOrganism repo root"
+        },
+        "termorganism.preSave.blockOnError": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn loudly when TermOrganism finds error-level diagnostics before save"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

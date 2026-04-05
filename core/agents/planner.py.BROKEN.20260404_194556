@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from core.agents.base import BaseAgent, AgentTask, AgentResult
+from core.memory.synaptic_ranker import choose_route_with_prior
+from core.agents.bridge_router import infer_bridge_route_bias, apply_bridge_bias_to_mode
+
+
+class PlannerAgent(BaseAgent):
+    name = "planner"
+
+    def _infer_from_file(self, target: str | None) -> str:
+        if not target:
+            return "fast"
+        try:
+            source = Path(target).read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return "fast"
+
+        lowered = source.lower()
+        if "open(" in lowered and ".read()" in lowered:
+            return "hot_force"
+        if "read_text(" in lowered:
+            return "hot_force"
+        if "import " in lowered or "from " in lowered:
+            return "fast_v2"
+        return "fast"
+
+    def _repo_type_from_target(self, target: str | None) -> str:
+        if not target:
+            return "generic"
+        suffix = Path(target).suffix.lower()
+        if suffix == ".py":
+            return "python_cli"
+        if suffix in {".js", ".ts"}:
+            return "js_cli"
+        return "generic"
+
+    async def run(self, task: AgentTask) -> AgentResult:
+        intent = str(task.payload.get("intent", "repair"))
+        target = task.payload.get("target")
+        error_text = str(task.payload.get("error_text", "")).lower()
+        signature = str(task.payload.get("signature") or "").strip().lower()
+        repo_type = str(task.payload.get("repo_type") or self._repo_type_from_target(target))
+
+        suggested_mode = intent
+        reason = "signature-guided routing"
+
+    bridge_bias = _planner_bridge_bias(
+        target=target,
+        repo_type=repo_type,
+        signature=signature,
+    )
+    bridge_apply = apply_bridge_bias_to_mode(
+        requested_mode=suggested_mode,
+        bridge_bias=bridge_bias,
+    )
+    if bridge_apply.get("used"):
+        reason = f"{reason} + predictive→repair bridge"
+
+        if intent == "auto":
+            if "filenotfounderror" in error_text or "no such file or directory" in error_text:
+                suggested_mode = "hot_force"
+            elif "modulenotfounderror" in error_text or "no module named" in error_text or "importerror" in error_text:
+                suggested_mode = "fast_v2"
+            else:
+                suggested_mode = self._infer_from_file(target)
+                reason = "content-guided routing"
+
+        fallback_route = suggested_mode
+        synaptic = {
+            "used": False,
+            "matched": False,
+            "route": fallback_route,
+            "fallback_route": fallback_route,
+            "prior": 0.0,
+            "seen_total": 0,
+            "evidence": {},
+        }
+
+        if signature:
+            prior = choose_route_with_prior(
+                signature=signature,
+                repo_type=repo_type,
+                file_path=target,
+                intent="repair" if intent == "auto" else intent,
+                fallback_route=fallback_route,
+            )
+            synaptic = {
+                "used": bool(prior.get("used_synaptic_prior")),
+                "matched": bool(prior.get("evidence")),
+                "route": str(prior.get("route") or fallback_route),
+                "fallback_route": str(prior.get("fallback_route") or fallback_route),
+                "prior": float(prior.get("prior", 0.0) or 0.0),
+                "seen_total": int(prior.get("seen_total", 0) or 0),
+                "evidence": dict(prior.get("evidence") or {}),
+            }
+
+            if intent == "auto" and synaptic["used"]:
+                suggested_mode = synaptic["route"]
+                reason = f"{reason} + synaptic prior"
+            elif synaptic["matched"]:
+                reason = f"{reason} + synaptic context"
+
+        return AgentResult(
+            agent=self.name,
+            ok=True,
+            output={
+                "plan_id": f"plan_{task.name}",
+                "intent": intent,
+                "target": target,
+                "signature": signature,
+                "repo_type": repo_type,
+                "suggested_mode": bridge_apply.get("effective_mode", suggested_mode),
+                "reason": reason,
+        "bridge_bias": bridge_bias,
+        "bridge_reason": bridge_apply.get("reason", ""),
+        "bridge_recommended_route": bridge_apply.get("recommended_route"),
+        "bridge_score": bridge_apply.get("score", 0.0),
+                "synaptic": synaptic,
+            },
+        )

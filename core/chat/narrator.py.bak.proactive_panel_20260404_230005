@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+from typing import Any
+
+try:
+    from rich import box
+    from rich.columns import Columns
+    from rich.console import Console, Group
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    HAVE_RICH = True
+except Exception:
+    HAVE_RICH = False
+
+
+def render_response(response: dict[str, Any]) -> None:
+    if HAVE_RICH:
+        _render_pretty(response)
+    else:
+        _render_plain(response)
+
+
+def _render_plain(response: dict[str, Any]) -> None:
+    print("TermOrganism Chat")
+    print("-----------------")
+    print(f"İstek: {response.get('message')}")
+    print(f"Niyet: {response.get('intent')} (confidence={response.get('confidence')})")
+    print("")
+    print("Plan:")
+    for i, step in enumerate(response.get("plan", []), start=1):
+        print(f"{i}. {step}")
+    print("")
+    print("Sonuç:")
+    print(response.get("answer", "-"))
+
+    pause = response.get("reflective_pause") or {}
+    if pause:
+        print("")
+        print("Reflective Pause:")
+        print(f"- should_pause: {pause.get('should_pause')}")
+        print(f"- force_preview: {pause.get('force_preview')}")
+        print(f"- reason: {pause.get('reason')}")
+
+    intent_ctx = response.get("intent_context") or {}
+    if intent_ctx:
+        print("")
+        print("Intent Context:")
+        print(f"- focus: {intent_ctx.get('focus', '-')}")
+        print(f"- confidence: {intent_ctx.get('confidence', '-')}")
+
+
+def _kv_panel(title: str, rows: list[tuple[str, str]]) -> Panel:
+    table = Table(box=box.SIMPLE_HEAVY, show_header=False, expand=True, padding=(0, 1))
+    table.add_column("k", style="grey62", width=18)
+    table.add_column("v", style="white")
+    for k, v in rows:
+        table.add_row(k, v)
+    return Panel(table, title=title, border_style="rgb(110,90,180)", box=box.ROUNDED)
+
+
+def _render_pretty(response: dict[str, Any]) -> None:
+    console = Console()
+
+    ok = bool(response.get("ok"))
+    intent = str(response.get("intent", "-"))
+    confidence = response.get("confidence", "-")
+
+    title = Text()
+    title.append("TermOrganism Chat", style="bold magenta")
+    title.append("  ")
+    title.append("SUCCESS" if ok else "FAILED", style="bold green" if ok else "bold red")
+
+    subtitle = Text()
+    subtitle.append(f"intent={intent}", style="bright_cyan")
+    subtitle.append("  ")
+    subtitle.append(f"confidence={confidence}", style="bright_blue")
+
+    header = Panel(Group(title, subtitle), border_style="rgb(110,90,180)", box=box.ROUNDED)
+
+    thinking_lines = []
+    for i, step in enumerate(response.get("plan", []), start=1):
+        thinking_lines.append(f"[bright_blue]{i}.[/] {step}")
+    if response.get("strategy_reason"):
+        thinking_lines.append("")
+        thinking_lines.append(f"[rgb(210,175,120)]strategy[/]: {response['strategy_reason']}")
+    if response.get("inference_reason"):
+        thinking_lines.append(f"[rgb(210,175,120)]reason[/]: {response['inference_reason']}")
+    if response.get("command"):
+        thinking_lines.append(f"[grey70]command[/]: {response['command']}")
+
+    thinking_panel = Panel(
+        "\n".join(thinking_lines) if thinking_lines else "[grey62]no plan[/]",
+        title="TermOrganism Thinking",
+        border_style="rgb(110,90,180)",
+        box=box.ROUNDED,
+    )
+
+    ctx = response.get("context") or {}
+    context_panel = _kv_panel(
+        "Context Snapshot",
+        [
+            ("cwd", str(ctx.get("cwd", "-"))),
+            ("repo_root", str(ctx.get("repo_root", "-"))),
+            ("branch", str(ctx.get("git_branch", "-"))),
+            ("repo_type", str(ctx.get("repo_type", "-"))),
+            ("target_hint", str(response.get("target_hint", "-"))),
+        ],
+    )
+
+    result_panel = Panel(
+        str(response.get("answer", "-")),
+        title="Result",
+        border_style="rgb(110,90,180)",
+        box=box.ROUNDED,
+    )
+
+    extra_panels = []
+
+    pending = response.get("pending_action") or {}
+    if pending:
+        extra_panels.append(
+            _kv_panel(
+                "Pending Action",
+                [
+                    ("kind", str(pending.get("kind", "-"))),
+                    ("target", str(pending.get("target", "-"))),
+                    ("risk", str(pending.get("risk", "-"))),
+                ],
+            )
+        )
+
+    pause = response.get("reflective_pause") or {}
+    if pause:
+        extra_panels.append(
+            _kv_panel(
+                "Reflective Pause",
+                [
+                    ("should_pause", str(pause.get("should_pause", "-"))),
+                    ("force_preview", str(pause.get("force_preview", "-"))),
+                    ("reason", str(pause.get("reason", "-"))),
+                    ("alternatives", ", ".join(pause.get("alternatives", [])[:4]) or "-"),
+                ],
+            )
+        )
+
+    intent_ctx = response.get("intent_context") or {}
+    if intent_ctx:
+        extra_panels.append(
+            _kv_panel(
+                "Intent-Aware Context",
+                [
+                    ("focus", str(intent_ctx.get("focus", "-"))),
+                    ("confidence", str(intent_ctx.get("confidence", "-"))),
+                    ("branch", str(intent_ctx.get("branch", "-"))),
+                    ("preload_routes", ", ".join(intent_ctx.get("preload_routes", [])[:4]) or "-"),
+                    ("modified_files", ", ".join(intent_ctx.get("modified_files", [])[:3]) or "-"),
+                ],
+            )
+        )
+
+    whispers = response.get("predictive_whispers") or []
+    if whispers:
+        rows = []
+        for idx, item in enumerate(whispers[:3], start=1):
+            rows.append((f"whisper_{idx}", str(item.get("whisper", "-"))))
+            rows.append((f"count_{idx}", f"seen={item.get('total', 0)} priority={item.get('priority', '-')}" ))
+        extra_panels.append(_kv_panel("Predictive Whispers", rows))
+
+    bridge = response.get("predictive_repair_bridge") or []
+    if bridge:
+        rows = []
+        for idx, item in enumerate(bridge[:3], start=1):
+            rows.append((f"bridge_{idx}", f"{item.get('kind', '-')} → success={item.get('success_rate', '-')} seen={item.get('total', 0)}"))
+            rows.append((f"route_{idx}", f"route={item.get('route_hint', '-')} syn={item.get('synaptic_route_hint', '-')} prior={item.get('avg_syn_prior', '-')}"))
+        extra_panels.append(_kv_panel("Predictive→Repair Bridge", rows))
+
+    bridge_bias = response.get("bridge_bias") or {}
+    if bridge_bias and bridge_bias.get("used"):
+        extra_panels.append(
+            _kv_panel(
+                "Bridge Bias",
+                [
+                    ("used", str(bridge_bias.get("used", False))),
+                    ("recommended_route", str(bridge_bias.get("recommended_route", "-"))),
+                    ("preview_bias", str(bridge_bias.get("preview_bias", False))),
+                    ("narrow_test_bias", str(bridge_bias.get("narrow_test_bias", False))),
+                    ("verify_emphasis", str(bridge_bias.get("verify_emphasis", False))),
+                    ("score", str(bridge_bias.get("score", "-"))),
+                    ("reason", str(bridge_bias.get("reason", "-"))),
+                ],
+            )
+        )
+
+    repair = response.get("repair") or {}
+    repair_result = repair.get("result") if isinstance(repair, dict) else None
+    if isinstance(repair_result, dict):
+        syn = repair_result.get("synaptic") or {}
+        upd = repair_result.get("synaptic_memory_update") or {}
+        rows = []
+        if syn:
+            rows.extend([
+                ("memory", "matched" if syn.get("matched") else "cold"),
+                ("route", str(syn.get("route", "-"))),
+                ("prior", str(syn.get("prior", "-"))),
+                ("seen", str(syn.get("seen_total", "-"))),
+            ])
+        if upd:
+            rows.extend([
+                ("learning", str(upd.get("delta", "-"))),
+                ("weight", str(upd.get("error_route_weight", "-"))),
+            ])
+        if rows:
+            extra_panels.append(_kv_panel("Synaptic Memory", rows))
+
+    scent = response.get("semantic_scent") or {}
+    if scent:
+        rows = [
+            ("why_now", str(scent.get("why_now", "-"))),
+            ("change_correlation", str(scent.get("change_correlation", "-"))),
+            ("scent_score", str(scent.get("scent_score", "-"))),
+        ]
+        suspects = scent.get("suspect_files") or []
+        for idx, item in enumerate(suspects[:3], start=1):
+            rows.append((f"suspect_{idx}", str(item)))
+        extra_panels.append(_kv_panel("Semantic Error Scent", rows))
+
+    console.print(header)
+    console.print()
+    console.print(Columns([thinking_panel, context_panel], expand=True, equal=True))
+    console.print()
+    console.print(result_panel)
+    for panel in extra_panels:
+        console.print()
+        console.print(panel)

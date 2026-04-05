@@ -1,240 +1,585 @@
 # TermOrganism
 
-**Semantic, self-healing terminal runtime with deterministic hot repair, fast fallback, daemon execution, and measurable workspace telemetry.**
+**Conversational, context-aware, self-healing developer runtime with predictive whispers, route arbitration, editor integration, and safe auto-fixes.**
 
-TermOrganism turns a shell from a passive command runner into a repair-capable runtime.
+TermOrganism turns a shell from a passive command runner into a repair-capable runtime that can:
 
-It observes failure signals, classifies known signatures, routes them through deterministic hot paths when possible, falls back into fast repair when needed, and escalates to deeper repair flows when shortcuts are not enough.
-
----
-
-## Core idea
-
-TermOrganism is built around a layered repair model:
-
-- **Hot Force**
-  - deterministic, signature-based repair
-  - very low latency
-  - best for known high-confidence failures
-
-- **Fast Path**
-  - lightweight recovery path after hot-force misses
-  - includes `fast_shortcut` and `fast_v2` style execution
-  - optimized for lower-latency recovery than the full pipeline
-
-- **Fallback Chain**
-  - structured escalation:
-  - `hot_force -> fast -> normal`
-
-- **Verification**
-  - syntax / lightweight verification on fast paths
-  - richer verification and scoring on deeper paths
-
-- **Workspace Pool Telemetry**
-  - pooled workspaces
-  - reuse / miss stats
-  - measurable daemon-side latency and workspace allocation metadata
+- detect failure patterns
+- predict pre-failure risks before execution
+- choose a repair route with explainable arbitration
+- verify outcomes
+- learn from past repairs
+- expose structured runtime reasoning
+- integrate with editors through LSP, sidebar whispers, and pre-save checks
+- apply safe code actions for selected Python risks
 
 ---
 
-## What is currently validated
+## What it is
 
-This milestone branch has working evidence for:
+TermOrganism is a terminal-native runtime layer for repair, verification, and context-aware decision-making.
 
-### 1. Hot-force runtime repair
-Deterministic repair for file-read runtime failures such as missing log files.
+Instead of treating the terminal as a place that only executes commands, it treats failures and code smells as signals that can be:
 
-Example signature:
-- `filenotfounderror:open:runtime`
+1. observed
+2. classified
+3. routed
+4. repaired
+5. verified
+6. remembered
+7. explained
 
-### 2. Hot-force import repair
-Deterministic repair for simple missing-import cases.
-
-Example signature:
-- `importerror:no_module_named`
-
-### 3. Hot-force miss -> fast fallback
-If hot-force does not match, TermOrganism can fall through into a fast shortcut path.
-
-Observed chain:
-- `hot_force_failed -> fast`
-
-### 4. Direct `fast_v2`
-`TERMORGANISM_FAST_V2=1` routes into a minimal fast path with workspace pool telemetry.
-
-### 5. Daemon-backed execution
-Persistent Unix-socket daemon for lower-latency execution and measurable request timing.
-
-### 6. Workspace pool telemetry
-Measured workspace pool metadata is attached to relevant responses, including:
-
-- workspace source
-- acquire latency
-- workspace id
-- created / reused / missed counts
-- hit rate
-
-### 7. Integration coverage
-Integration tests currently cover:
-
-- Hot Force Runtime
-- Hot Force Import
-- Fallback Fast Shortcut
-- Direct Fast V2 Import
+This makes the shell behave more like an adaptive runtime than a passive command prompt.
 
 ---
 
-## Architecture
+## Core capabilities
 
-### Daemon
-A persistent Unix-socket daemon handles repair requests and keeps hot paths cheap.
+### 1. Repair runtime
+TermOrganism inspects failures and routes them through layered repair paths.
 
-### HotCacheForcePath
-Deterministic rewrite layer for known signatures.
+### 2. Predictive diagnostics
+Before execution, TermOrganism can detect likely issues such as:
 
-### FastV2Minimal
-Minimal direct fast path for known signatures and import/runtime guard cases.
+- missing imports
+- missing file paths
+- bare except blocks
+- mutable default arguments
+- eval / exec risk
+- wildcard import risk
+- subprocess shell risk
+- secret-inline risk
+- missing `__main__` guard
+- relative import fragility
+- environment default handling risk
 
-### FallbackOrchestrator
-Explicit staged routing:
+### 3. Context-aware routing
+Route choice is not based on signature alone.
 
-`hot_force -> fast -> normal`
+TermOrganism combines:
 
-### RealWorkspacePool
-Measured pooled scratch workspaces with telemetry exposed in JSON output.
+- planner suggestion
+- intent-aware context
+- predictive-to-repair bridge memory
+- live whisper signals
+- route arbitration
+
+### 4. Explainable route selection
+TermOrganism can explain why a route was chosen, including:
+
+- planner suggested mode
+- final effective mode
+- bridge signal
+- whisper signal
+- arbitration winner
+
+### 5. Editor-facing experience
+TermOrganism includes:
+
+- live file analysis
+- sidebar whisper feed
+- pre-save checks
+- LSP diagnostics
+- code actions / preview fixes
+
+### 6. Safe auto-fixes
+Selected Python issues can be auto-fixed safely, including:
+
+- `bare-except-risk`
+- `mutable-default-risk`
+- `main-guard-risk`
+- `path-risk`
+
+### 7. Benchmarking and smoke tests
+TermOrganism can benchmark proactive routing behavior across multiple synthetic cases and provide machine-readable JSON / CSV outputs.
 
 ---
 
-## Example commands
+## Architecture overview
 
-### Hot-force runtime
+TermOrganism currently consists of these major layers:
+
+### Repair and routing
+- planner
+- verifier
+- test runner
+- fallback repair paths
+- fast / fast_v2 / hot_force route selection
+
+### Predictive layer
+- `termorganism-watch`
+- `termorganism-live`
+- predictive runtime diagnostics
+- pre-failure whispers
+- sidebar feed
+- pre-save gate
+
+### Memory and bridge layer
+- synaptic memory
+- predictive-to-repair bridge
+- route bias from historical outcomes
+
+### Context layer
+- intent-aware context
+- preload routes
+- safe preview bias
+- verify-first bias
+
+### Arbitration layer
+- route candidates
+- risk-adjusted scoring
+- arbitration winner selection
+
+### Editor layer
+- LSP server
+- VS Code integration
+- Neovim integration
+- fix preview / apply commands
+
+---
+
+## Why this is different
+
+TermOrganism is not only a repair tool.
+
+It is becoming a **context-aware runtime** that can:
+
+- read code as it changes
+- forecast likely breakage
+- explain why it chose a route
+- expose route reasoning as structured runtime state
+- bridge terminal repair and editor diagnostics
+
+---
+
+## Main commands
+
+### Conversational / repo interaction
 ```bash
-TERMORGANISM_USE_DAEMON=1 TERMORGANISM_HOT_FORCE=1 ./termorganism repair /tmp/broken_runtime_hotforce.py --json
+./bin/termorganism-chat "Bu repo ne yapıyor?"
+./bin/termorganism-chat "Testleri başlat"
+./bin/termorganism-chat "Git ne alemde"
 ```
 
-### Hot-force import
+### Repair
 ```bash
-TERMORGANISM_USE_DAEMON=1 TERMORGANISM_HOT_FORCE=1 ./termorganism repair /tmp/broken_import_hotforce.py --json
+./termorganism repair /tmp/target.py --json
+./termorganism repair /tmp/target.py --pretty
 ```
 
-### Direct fast_v2
+### Predictive watch
 ```bash
-TERMORGANISM_FAST_V2=1 TERMORGANISM_USE_DAEMON=1 ./termorganism repair /tmp/broken_import_hotforce.py --json
+./bin/termorganism-watch /tmp/file.py
+./bin/termorganism-watch --modified --loop
 ```
 
-### Default daemon-backed routing
+### Live predictive analysis
 ```bash
-TERMORGANISM_USE_DAEMON=1 ./termorganism repair demo/broken_runtime.py --json
+./bin/termorganism-live /tmp/file.py
+```
+
+### Sidebar whisper feed
+```bash
+./bin/termorganism-sidebar /tmp/file.py --once
+```
+
+### Pre-save analysis
+```bash
+./bin/termorganism-pre-save /tmp/file.py --json
+./bin/termorganism-pre-save /tmp/file.py --stdin --json --block-on-error
+```
+
+### Route explainability
+```bash
+./bin/termorganism-explain-route /tmp/file.py
+./bin/termorganism-explain-route /tmp/file.py --json
+```
+
+### Benchmarking
+```bash
+./bin/termorganism-benchmark-proactive
+./bin/termorganism-benchmark-proactive --json
+./bin/termorganism-benchmark-proactive --csv /tmp/termorganism_benchmark.csv
+```
+
+### Smoke test
+```bash
+./bin/termorganism-smoke-full
+```
+
+### Fix preview / apply
+```bash
+./bin/termorganism-fix-preview /tmp/file.py
+./bin/termorganism-fix-preview /tmp/file.py --json
+./bin/termorganism-apply-fix /tmp/file.py --action-id <ACTION_ID>
+```
+
+### LSP
+```bash
+./bin/termorganism-lsp
 ```
 
 ---
 
-## Example output fields
-
-Representative JSON fields include:
-
-- `mode`
-- `success`
-- `signature`
-- `strategy`
-- `verify`
-- `confidence`
-- `fast_v2`
-- `fallback_chain`
-- `workspace_pool`
-- `daemon`
-
-Example:
-
-```json
-{
-  "mode": "fast_v2",
-  "success": true,
-  "signature": "importerror:no_module_named",
-  "strategy": "import_guard",
-  "fast_v2": {
-    "used": true,
-    "path": "dynamic_import_guard",
-    "signature": "importerror:no_module_named"
-  },
-  "workspace_pool": {
-    "source": "pool",
-    "latency_ms": 2.926,
-    "id": "ws_000"
-  },
-  "daemon": {
-    "socket": "/tmp/termorganism.sock",
-    "request_ms": 56.282
-  }
-}
-```
-
----
-
-## Integration test
-
-Run the integration suite with:
+## 30-second demo
 
 ```bash
-python3 scripts/integration_test.py
+cat > /tmp/live_demo.py <<'PY'
+import definitely_missing_package_3301
+
+def risky(a=[]):
+    try:
+        return eval("1+1")
+    except:
+        return None
+
+with open("missing_file_3301.txt") as f:
+    print(f.read())
+PY
+
+./bin/termorganism-live /tmp/live_demo.py
+./bin/termorganism-pre-save /tmp/live_demo.py --json
+./bin/termorganism-fix-preview /tmp/live_demo.py
+./bin/termorganism-explain-route /tmp/live_demo.py
 ```
 
-Expected coverage:
+---
 
-- Hot Force Runtime
-- Hot Force Import
-- Fallback Fast Shortcut
-- Direct Fast V2 Import
+## Demo workflow
+
+### 1. Predictive live analysis
+
+Create a demo file:
+
+```bash
+cat > /tmp/live_demo.py <<'PY'
+import definitely_missing_package_3301
+
+def risky(a=[]):
+    try:
+        return eval("1+1")
+    except:
+        return None
+
+with open("missing_file_3301.txt") as f:
+    print(f.read())
+PY
+```
+
+Run live analysis:
+
+```bash
+./bin/termorganism-live /tmp/live_demo.py
+```
+
+Expected output includes signals such as:
+
+- `eval-risk`
+- `import-risk`
+- `bare-except-risk`
+- `path-risk`
+- `mutable-default-risk`
 
 ---
 
-## Current strengths
+### 2. Pre-save gate
 
-TermOrganism is currently strongest in:
+```bash
+./bin/termorganism-pre-save /tmp/live_demo.py --json
+```
 
-- deterministic hot repair
-- daemon-backed low-latency routing
-- fast fallback paths
-- measurable workspace reuse
-- explicit repair telemetry
-- branch-verified integration coverage
+This returns structured JSON containing:
 
----
-
-## Current limits
-
-Areas still under active development:
-
-- deeper cross-file performance
-- broader multi-language maturity
-- stronger production ergonomics
-- richer normal-path planning and verification
-- wider benchmark coverage beyond current validated paths
+- top whisper
+- diagnostics
+- `allow_save`
+- `has_error`
+- `has_warning`
 
 ---
 
-## Why this exists
+### 3. Explain route selection
 
-Most terminal tooling either runs commands, suggests fixes, or edits files.
+```bash
+./bin/termorganism-explain-route /tmp/whisper_demo.py
+```
 
-TermOrganism is aiming at a stricter loop:
+Typical explanation includes:
 
-**observe -> classify -> route -> repair -> verify -> score**
+- planner suggested route
+- final effective route
+- bridge bias
+- live whisper
+- intent-aware context
+- arbitration winner
 
-The goal is to make repair execution itself a first-class terminal runtime behavior.
-
----
-
-## Branch note
-
-This README reflects the active milestone branch:
-
-`milestone/4of4-benchmark-green`
-
-That branch contains the currently validated daemon, hot-force, fast fallback, fast_v2, workspace pool telemetry, and integration coverage work.
+This is one of the main debugging and demo commands.
 
 ---
 
-## License
+### 4. Benchmark proactive routing
 
-MIT
+```bash
+./bin/termorganism-benchmark-proactive
+```
+
+This runs multiple synthetic cases and shows:
+
+- total cases
+- successful cases
+- planner changed count
+- whisper cases
+- bridge-scored cases
+
+For machine-readable output:
+
+```bash
+./bin/termorganism-benchmark-proactive --json
+./bin/termorganism-benchmark-proactive --csv /tmp/termorganism_benchmark.csv
+```
+
+---
+
+### 5. Fix preview and safe apply
+
+Create a small example:
+
+```bash
+cat > /tmp/action_demo.py <<'PY'
+def x(a=[]):
+    try:
+        return 1
+    except:
+        return 0
+PY
+```
+
+Preview fixes:
+
+```bash
+./bin/termorganism-fix-preview /tmp/action_demo.py
+```
+
+Apply the first auto-fix:
+
+```bash
+ACTION_ID=$(./bin/termorganism-fix-preview /tmp/action_demo.py --json | python3 -c 'import json,sys; j=json.load(sys.stdin); print(next(a["action_id"] for a in j["actions"] if a["auto_apply"]))')
+./bin/termorganism-apply-fix /tmp/action_demo.py --action-id "$ACTION_ID"
+```
+
+This safely upgrades:
+
+```python
+except:
+```
+
+to:
+
+```python
+except Exception:
+```
+
+---
+
+## Safe auto-fixes currently implemented
+
+### Auto-apply
+- bare except -> `except Exception`
+- mutable default -> `None` + body initialization
+- append `__main__` guard
+- path existence guard for simple literal `open(...)`
+
+### Preview-only
+- guarded import strategy
+- eval replacement strategy
+- exec replacement strategy
+- shell=False subprocess strategy
+- explicit import list suggestion
+- package-safe import strategy
+- env default / fail-fast strategy
+- secret externalization strategy
+
+---
+
+## Route selection model
+
+Route choice is layered.
+
+### Inputs
+- signature-guided planner suggestion
+- intent-aware context
+- predictive-to-repair bridge memory
+- live runtime whisper
+- arbitration logic
+
+### Output
+TermOrganism exposes:
+
+- planner suggested mode
+- final effective mode
+- arbitration winner
+- bridge score
+- whisper kind / priority
+- reason string
+
+This makes route choice inspectable rather than opaque.
+
+---
+
+## Example explain-route output
+
+A typical route explain flow looks like this:
+
+```text
+planner_suggested: hot_force
+final_effective: fast_v2
+intent_reason: intent-aware context avoided hot_force
+bridge_route: fast
+whisper_kind: path-risk
+arbitration_winner: fast_v2
+```
+
+This means:
+
+- planner wanted an aggressive route
+- context and runtime whispers softened it
+- arbitration picked a safer final route
+
+---
+
+## Editor integration
+
+### VS Code
+TermOrganism includes a local VS Code extension scaffold with:
+
+- LSP diagnostics
+- sidebar whispers
+- pre-save checks
+- preview fixes command
+
+Key files:
+- `editor/vscode/termorganism-vscode/package.json`
+- `editor/vscode/termorganism-vscode/extension.js`
+
+### Neovim
+TermOrganism includes a Neovim integration module with:
+
+- LSP setup
+- pre-save gate
+- sidebar command
+- preview fixes command
+
+Key file:
+- `editor/nvim/termorganism.lua`
+
+Commands in Neovim:
+- `:TermOrganismSidebar`
+- `:TermOrganismPreSave`
+- `:TermOrganismPreviewFixes`
+
+---
+
+## Smoke test
+
+The project includes a full smoke script:
+
+```bash
+./bin/termorganism-smoke-full
+```
+
+This runs:
+
+1. live predictive analysis
+2. pre-save analysis
+3. explain-route
+4. proactive benchmark
+5. fix-preview
+
+This is the quickest full-system demonstration path.
+
+---
+
+## Benchmark interpretation
+
+The benchmark is useful for checking whether:
+
+- planner and final route differ
+- whisper signals are influencing route choice
+- bridge memory is scoring routes
+- arbitration is selecting the safest effective route
+
+High-value indicators:
+- non-zero `planner_changed_count`
+- non-zero `whisper_cases`
+- non-zero `bridge_scored_cases`
+
+---
+
+## Current maturity
+
+TermOrganism is currently a **showable product prototype**.
+
+It already has:
+
+- predictive diagnostics
+- repair routing
+- intent-aware context
+- bridge memory
+- live whisper signals
+- route arbitration
+- editor integration
+- safe auto-fixes
+- benchmark tooling
+- route explainability
+
+---
+
+## Current limitations
+
+Some areas are still early:
+
+- full LSP capability set is still limited
+- code actions are intentionally conservative
+- many fix types are preview-only
+- deeper auto-repair synthesis still needs expansion
+- swarm / federated memory is not implemented
+- ontological health / bio-inspired runtime model is still roadmap-level
+
+---
+
+## Roadmap direction
+
+Near-term high-value work:
+
+- expand safe auto-fix repertoire
+- broaden predictive signature coverage
+- improve benchmark coverage and regression tracking
+- polish VS Code / Neovim integration
+- harden daemon serialization and payload normalization further
+- enrich route candidate export and scoring visibility
+
+Longer-term directions:
+
+- temporal / fermented memory
+- dynamic route generation
+- mutation lab
+- distributed / federated repair intelligence
+- health / homeostasis style project reporting
+
+---
+
+## Philosophy
+
+TermOrganism is built around the idea that the terminal should not only execute.
+
+It should also:
+
+- notice
+- warn
+- explain
+- suggest
+- repair
+- verify
+- remember
+
+The long-term goal is a runtime that behaves less like a command launcher and more like an adaptive engineering organism.
