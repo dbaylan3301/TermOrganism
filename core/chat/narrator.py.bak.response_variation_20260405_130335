@@ -1,19 +1,9 @@
 from __future__ import annotations
 
-import os
-
-
-
-def _variation_enabled() -> bool:
-    raw = str(os.getenv("TERMORGANISM_CHAT_VARIATION", "0")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
 
 def _maybe_vary_narration(text: str, *, mode: str = "chat_narrator", extra_context: dict | None = None) -> str:
     base = str(text or "").strip()
     if not base:
-        return base
-    if not _variation_enabled():
         return base
     ctx = {"mode": mode}
     if extra_context:
@@ -22,40 +12,6 @@ def _maybe_vary_narration(text: str, *, mode: str = "chat_narrator", extra_conte
         except Exception:
             pass
     return vary_narration_text(base, context=ctx)
-
-
-
-def _condense_answer(text: str, *, intent: str = "") -> str:
-    t = " ".join(str(text or "").split()).strip()
-    if not t:
-        return t
-
-    intent = str(intent or "").strip().lower()
-
-    if intent == "repo_summary":
-        if "TermOrganism" in t:
-            return (
-                "Bu repo, terminali pasif komut çalıştırıcı olmaktan çıkarıp bağlam farkındalıklı ve self-healing bir developer runtime haline getirmeyi amaçlıyor. "
-                "Predictive whispers, repair routing, explainable arbitration, editor/LSP entegrasyonu ve güvenli auto-fix katmanları ana omurgayı oluşturuyor."
-            )
-
-    if intent == "help":
-        return (
-            "Predictive layer, kod veya çalışma akışı kırılmadan önce risk sinyallerini yakalayıp daha güvenli route seçimine yardım eder. "
-            "Özellikle whisper, pre-save, sidebar ve route arbitration tarafında erken uyarı katmanı gibi davranır."
-        )
-
-    if intent == "diagnose":
-        return (
-            "Şu an fast_v2 seçimi, agresif hot_force yerine daha kontrollü ve verify-first ağırlıklı bir rota daha güvenli göründüğü için öne çıkıyor. "
-            "Intent-aware context, bridge bias ve live whisper birlikte kararı fast_v2 yönüne itiyor."
-        )
-
-    if len(t) > 420:
-        return t[:420].rsplit(" ", 1)[0] + "..."
-
-    return t
-
 
 
 from typing import Any
@@ -73,140 +29,11 @@ except Exception:
     HAVE_RICH = False
 
 
-
-def _chat_verbose_enabled() -> bool:
-    raw = str(os.getenv("TERMORGANISM_CHAT_VERBOSE", "0")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _render_compact(response: dict[str, Any]) -> None:
-    if not HAVE_RICH:
-        _render_plain(response)
-        return
-
-    console = Console()
-
-    ok = bool(response.get("ok"))
-    intent = str(response.get("intent", "-"))
-    confidence = response.get("confidence", "-")
-
-    title = Text()
-    title.append("TermOrganism Chat", style="bold magenta")
-    title.append("  ")
-    title.append("SUCCESS" if ok else "FAILED", style="bold green" if ok else "bold red")
-
-    subtitle = Text()
-    subtitle.append(f"intent={intent}", style="bright_cyan")
-    subtitle.append("  ")
-    subtitle.append(f"confidence={confidence}", style="bright_blue")
-
-    header = Panel(Group(title, subtitle), border_style="rgb(110,90,180)", box=box.ROUNDED)
-
-    thinking_lines = []
-    for i, step in enumerate(response.get("plan", []), start=1):
-        thinking_lines.append(f"[bright_blue]{i}.[/] {step}")
-    if response.get("strategy_reason"):
-        thinking_lines.append("")
-        thinking_lines.append(f"[rgb(210,175,120)]strategy[/]: {response['strategy_reason']}")
-    if response.get("inference_reason"):
-        thinking_lines.append(f"[rgb(210,175,120)]reason[/]: {response['inference_reason']}")
-
-    thinking_panel = Panel(
-        "\n".join(thinking_lines) if thinking_lines else "[grey62]no plan[/]",
-        title="TermOrganism Thinking",
-        border_style="rgb(110,90,180)",
-        box=box.ROUNDED,
-    )
-
-    result_text = str(response.get("answer", "-"))
-    pending = response.get("pending_action") or {}
-    if isinstance(pending, dict) and pending:
-        kind = str(pending.get("kind", "")).strip()
-        target = str(pending.get("target", "")).strip()
-        risk = str(pending.get("risk", "")).strip()
-        extra = []
-        if kind:
-            extra.append(f"işlem={kind}")
-        if target:
-            extra.append(f"hedef={target}")
-        if risk:
-            extra.append(f"risk={risk}")
-        if extra:
-            result_text += "\n\nBekleyen işlem: " + " | ".join(extra)
-
-    result_panel = Panel(
-        result_text,
-        title="Result",
-        border_style="rgb(110,90,180)",
-        box=box.ROUNDED,
-    )
-
-    console.print(header)
-    console.print(thinking_panel)
-    console.print(result_panel)
-
-
-def _prepare_varied_response(response: dict[str, Any]) -> dict[str, Any]:
-    r = dict(response or {})
-
-    if r.get("answer"):
-        condensed_answer = _condense_answer(str(r["answer"]), intent=str(r.get("intent") or ""))
-        r["answer"] = _maybe_vary_narration(condensed_answer, mode="chat_answer", extra_context={"intent": str(r.get("intent") or "")})
-
-    if r.get("strategy_reason"):
-        r["strategy_reason"] = _maybe_vary_narration(str(r["strategy_reason"]), mode="chat_strategy_reason")
-
-    if r.get("inference_reason"):
-        r["inference_reason"] = _maybe_vary_narration(str(r["inference_reason"]), mode="chat_inference_reason")
-
-    if isinstance(r.get("plan"), list):
-        r["plan"] = [
-            _maybe_vary_narration(str(x), mode="chat_plan_step")
-            for x in r["plan"]
-        ]
-
-    pause = r.get("reflective_pause") or {}
-    if isinstance(pause, dict) and pause.get("reason"):
-        pause = dict(pause)
-        pause["reason"] = _maybe_vary_narration(str(pause["reason"]), mode="chat_pause_reason")
-        r["reflective_pause"] = pause
-
-    whispers = r.get("predictive_whispers") or []
-    if isinstance(whispers, list):
-        new_whispers = []
-        for item in whispers:
-            if isinstance(item, dict):
-                row = dict(item)
-                if row.get("whisper"):
-                    row["whisper"] = _maybe_vary_narration(str(row["whisper"]), mode="chat_predictive_whisper")
-                new_whispers.append(row)
-            else:
-                new_whispers.append(item)
-        r["predictive_whispers"] = new_whispers
-
-    proactive = r.get("proactive_signals") or {}
-    if isinstance(proactive, dict):
-        proactive = dict(proactive)
-        if proactive.get("whisper_message"):
-            proactive["whisper_message"] = _maybe_vary_narration(str(proactive["whisper_message"]), mode="chat_proactive_whisper")
-        if proactive.get("intent_reason"):
-            proactive["intent_reason"] = _maybe_vary_narration(str(proactive["intent_reason"]), mode="chat_intent_reason")
-        if proactive.get("bridge_reason"):
-            proactive["bridge_reason"] = _maybe_vary_narration(str(proactive["bridge_reason"]), mode="chat_bridge_reason")
-        r["proactive_signals"] = proactive
-
-    return r
-
-
 def render_response(response: dict[str, Any]) -> None:
-    response = _prepare_varied_response(response)
-    if _chat_verbose_enabled():
-        if HAVE_RICH:
-            _render_pretty(response)
-        else:
-            _render_plain(response)
+    if HAVE_RICH:
+        _render_pretty(response)
     else:
-        _render_compact(response)
+        _render_plain(response)
 
 
 def _render_plain(response: dict[str, Any]) -> None:

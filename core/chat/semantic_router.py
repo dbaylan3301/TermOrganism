@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from typing import Any
+
+from core.chat.repo_assessment import (
+    scan_repo,
+    top_gaps,
+    repo_summary_text,
+    architecture_review_text,
+    weakness_analysis_text,
+    productization_text,
+    roadmap_text,
+    test_strategy_text,
+)
+from core.chat.task_spec import TaskSpec
+
+
+def _base_response(message: str, spec: TaskSpec, answer: str, *, root: str) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "intent": spec.intent_family,
+        "confidence": spec.confidence,
+        "message": message,
+        "plan": [
+            "inputu semantik olarak anlamlandıracağım",
+            "repo bağlamını tarayıp en stabil yorumu seçeceğim",
+            "sonucu kısa ve uygulanabilir şekilde döneceğim",
+        ],
+        "strategy_reason": f"TaskSpec route={spec.recommended_route} family={spec.intent_family}",
+        "inference_reason": spec.user_goal,
+        "answer": answer,
+        "context": {
+            "cwd": root,
+            "repo_root": root,
+            "git_branch": "-",
+            "repo_type": "python_cli",
+        },
+        "reflective_pause": {
+            "should_pause": spec.needs_execution,
+            "force_preview": spec.needs_execution,
+            "reason": "read-only semantic route" if not spec.needs_execution else "uygulama öncesi preview-first semantic route",
+            "alternatives": [] if not spec.needs_execution else ["preview_only", "diagnose_first", "apply_safe_route"],
+        },
+        "intent_context": {
+            "focus": "repo_assessment" if not spec.needs_execution else "safe_repair_intent",
+            "confidence": spec.confidence,
+            "branch": "-",
+            "preload_routes": [spec.recommended_route, spec.intent_family, "semantic_grounding"],
+            "modified_files": [],
+        },
+        "task_spec": spec.to_dict(),
+    }
+
+
+def build_semantic_response(message: str, spec: TaskSpec, repo_root: str | None = None) -> dict[str, Any] | None:
+    if spec.needs_execution:
+        return None
+
+    scan = scan_repo(repo_root)
+    root = str(scan["repo_root"])
+
+    if spec.intent_family == "repo_gap":
+        gaps = top_gaps(scan)[:5]
+        if gaps:
+            answer = "Bu projede en kritik eksikler / zayıf alanlar şunlar görünüyor:\n\n" + "\n".join(
+                f"{i}) {g['title']} — {g['why']} Çözüm: {g['fix']}"
+                for i, g in enumerate(gaps, start=1)
+            )
+        else:
+            answer = "Belirgin temel eksik görünmüyor; bundan sonraki seviye kalite sertleştirme ve dokümantasyon derinliği."
+        return _base_response(message, spec, answer, root=root)
+
+    if spec.intent_family == "repo_summary":
+        return _base_response(message, spec, repo_summary_text(scan), root=root)
+
+    if spec.intent_family == "architecture_review":
+        return _base_response(message, spec, architecture_review_text(scan), root=root)
+
+    if spec.intent_family == "weakness_analysis":
+        return _base_response(message, spec, weakness_analysis_text(scan), root=root)
+
+    if spec.intent_family == "productization":
+        return _base_response(message, spec, productization_text(scan), root=root)
+
+    if spec.intent_family == "roadmap":
+        return _base_response(message, spec, roadmap_text(scan), root=root)
+
+    if spec.intent_family == "test_strategy":
+        return _base_response(message, spec, test_strategy_text(scan), root=root)
+
+    if spec.intent_family == "help":
+        answer = (
+            "Bu soru özellik açıklaması gibi görünüyor. Semantic interpreter, önce kullanıcı niyetini normalize edip sonra uygun güvenli route'u seçmeyi hedefler. "
+            "Böylece sistem pattern ezberinden ziyade anlam ailesine göre davranmaya yaklaşır."
+        )
+        return _base_response(message, spec, answer, root=root)
+
+    if spec.intent_family == "diagnose":
+        answer = (
+            "Bu soru karar mantığı teşhisi istiyor. Semantic katman açısından amaç, agresif uygulama yerine en stabil ve verify-first yolu seçmek; "
+            "bu yüzden intent, risk ve bağlam birlikte değerlendirilir."
+        )
+        return _base_response(message, spec, answer, root=root)
+
+    if spec.intent_family == "general_analysis":
+        answer = (
+            "Soruyu genel analiz olarak yorumladım. Semantic interpreter aktif, ama tüm serbest sorular için tam ürün seviyesi anlama henüz tamamlanmış değil. "
+            "Yine de niyeti en güvenli aileye oturtup kısa, uygulanabilir yanıt vermeye çalışıyorum."
+        )
+        return _base_response(message, spec, answer, root=root)
+
+    return None

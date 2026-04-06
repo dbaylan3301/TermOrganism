@@ -1,19 +1,9 @@
 from __future__ import annotations
 
-import os
-
-
-
-def _variation_enabled() -> bool:
-    raw = str(os.getenv("TERMORGANISM_CHAT_VARIATION", "0")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
 
 def _maybe_vary_narration(text: str, *, mode: str = "chat_narrator", extra_context: dict | None = None) -> str:
     base = str(text or "").strip()
     if not base:
-        return base
-    if not _variation_enabled():
         return base
     ctx = {"mode": mode}
     if extra_context:
@@ -73,79 +63,6 @@ except Exception:
     HAVE_RICH = False
 
 
-
-def _chat_verbose_enabled() -> bool:
-    raw = str(os.getenv("TERMORGANISM_CHAT_VERBOSE", "0")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _render_compact(response: dict[str, Any]) -> None:
-    if not HAVE_RICH:
-        _render_plain(response)
-        return
-
-    console = Console()
-
-    ok = bool(response.get("ok"))
-    intent = str(response.get("intent", "-"))
-    confidence = response.get("confidence", "-")
-
-    title = Text()
-    title.append("TermOrganism Chat", style="bold magenta")
-    title.append("  ")
-    title.append("SUCCESS" if ok else "FAILED", style="bold green" if ok else "bold red")
-
-    subtitle = Text()
-    subtitle.append(f"intent={intent}", style="bright_cyan")
-    subtitle.append("  ")
-    subtitle.append(f"confidence={confidence}", style="bright_blue")
-
-    header = Panel(Group(title, subtitle), border_style="rgb(110,90,180)", box=box.ROUNDED)
-
-    thinking_lines = []
-    for i, step in enumerate(response.get("plan", []), start=1):
-        thinking_lines.append(f"[bright_blue]{i}.[/] {step}")
-    if response.get("strategy_reason"):
-        thinking_lines.append("")
-        thinking_lines.append(f"[rgb(210,175,120)]strategy[/]: {response['strategy_reason']}")
-    if response.get("inference_reason"):
-        thinking_lines.append(f"[rgb(210,175,120)]reason[/]: {response['inference_reason']}")
-
-    thinking_panel = Panel(
-        "\n".join(thinking_lines) if thinking_lines else "[grey62]no plan[/]",
-        title="TermOrganism Thinking",
-        border_style="rgb(110,90,180)",
-        box=box.ROUNDED,
-    )
-
-    result_text = str(response.get("answer", "-"))
-    pending = response.get("pending_action") or {}
-    if isinstance(pending, dict) and pending:
-        kind = str(pending.get("kind", "")).strip()
-        target = str(pending.get("target", "")).strip()
-        risk = str(pending.get("risk", "")).strip()
-        extra = []
-        if kind:
-            extra.append(f"işlem={kind}")
-        if target:
-            extra.append(f"hedef={target}")
-        if risk:
-            extra.append(f"risk={risk}")
-        if extra:
-            result_text += "\n\nBekleyen işlem: " + " | ".join(extra)
-
-    result_panel = Panel(
-        result_text,
-        title="Result",
-        border_style="rgb(110,90,180)",
-        box=box.ROUNDED,
-    )
-
-    console.print(header)
-    console.print(thinking_panel)
-    console.print(result_panel)
-
-
 def _prepare_varied_response(response: dict[str, Any]) -> dict[str, Any]:
     r = dict(response or {})
 
@@ -200,13 +117,10 @@ def _prepare_varied_response(response: dict[str, Any]) -> dict[str, Any]:
 
 def render_response(response: dict[str, Any]) -> None:
     response = _prepare_varied_response(response)
-    if _chat_verbose_enabled():
-        if HAVE_RICH:
-            _render_pretty(response)
-        else:
-            _render_plain(response)
+    if HAVE_RICH:
+        _render_pretty(response)
     else:
-        _render_compact(response)
+        _render_plain(response)
 
 
 def _render_plain(response: dict[str, Any]) -> None:

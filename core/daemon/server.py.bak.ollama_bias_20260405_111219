@@ -7,8 +7,6 @@ from core.agents.whisper_router import apply_live_whisper_bias, derive_runtime_w
 from core.agents.proactive_summary import build_proactive_signals, enrich_planner_reason
 from core.agents.route_candidates import build_route_candidates
 from core.agents.route_arbitrator import arbitrate_route_candidates
-from core.llm.route_bias import apply_ollama_route_bias
-from core.llm.text_variation import vary_whisper_message
 
 import argparse
 import asyncio
@@ -781,32 +779,6 @@ class TermOrganismDaemon:
                     whisper_apply=whisper_apply,
                     intent_ctx=intent_ctx,
                 )
-                ollama_bias = apply_ollama_route_bias(
-                    route_candidates,
-                    task_kind="route_decision",
-                    context={
-                        "signature": str(request.get("signature") or context.get("signature") or ""),
-                        "planner_suggested_mode": str(planner.get("suggested_mode") or effective_mode),
-                        "intent_focus": str(intent_ctx.get("focus") or "general_runtime"),
-                        "intent_preload_routes": list(intent_ctx.get("preload_routes") or []),
-                        "bridge_recommended_route": str(bridge_apply.get("recommended_route") or ""),
-                        "bridge_score": float(bridge_apply.get("score", 0.0) or 0.0),
-                        "whisper_kind": str(whisper_apply.get("kind") or ""),
-                        "whisper_priority": float(whisper_apply.get("priority", 0.0) or 0.0),
-                    },
-                    complexity=0.8 if str(planner.get("suggested_mode") or "") in {"hot_force", "fast"} else 0.6,
-                )
-                route_candidates = list(ollama_bias.get("candidates") or route_candidates)
-                ollama_thought = dict(ollama_bias.get("thought") or {})
-                ollama_meta = dict(ollama_thought.get("_ollama") or {})
-                routing_meta["ollama_policy"] = ollama_meta.get("policy")
-                routing_meta["ollama_model"] = ollama_meta.get("model")
-                routing_meta["ollama_think"] = ollama_meta.get("think")
-                routing_meta["ollama_available"] = ollama_meta.get("available")
-                routing_meta["ollama_mode_bias"] = ollama_thought.get("mode_bias")
-                routing_meta["ollama_verify_first"] = ollama_thought.get("verify_first")
-                routing_meta["ollama_summary"] = ollama_thought.get("summary")
-
                 route_arbitration = arbitrate_route_candidates(
                     route_candidates,
                     fallback_route=str(effective_mode),

@@ -28,6 +28,7 @@ from typing import Any
 
 from .interpreter import ChatIntent
 from .session import ChatSessionState
+from core.chat.semantic_interpreter import interpret_message
 
 
 def _preload_has(intent_context: dict[str, Any] | None, key: str) -> bool:
@@ -53,6 +54,10 @@ def build_plan(
     predictive_whispers: list[dict[str, Any]] | None = None,
     bridge_bias: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    semantic = _semantic_intent_override(message)
+    if semantic is not None:
+        return semantic
+
     goal = intent.goal
     explain_first = bool(intent.flags.get("explain"))
     auto_apply = bool(intent.flags.get("auto"))

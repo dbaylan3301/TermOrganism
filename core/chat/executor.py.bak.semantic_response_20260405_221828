@@ -4,8 +4,6 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Any
-from core.chat.semantic_router import build_semantic_response
-from core.chat.task_spec import TaskSpec
 
 from .session import ChatSessionState
 from core.context.semantic_scent import build_semantic_scent

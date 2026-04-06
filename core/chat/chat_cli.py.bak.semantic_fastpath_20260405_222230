@@ -14,8 +14,6 @@ import argparse
 from .context import detect_context
 from .executor import execute_plan
 from .interpreter import interpret_message
-from core.chat.semantic_interpreter import interpret_message as interpret_semantic_task
-from core.chat.semantic_router import build_semantic_response
 from .narrator import render_response
 from .planner import build_plan
 from .session import load_session, save_session, update_session
@@ -27,14 +25,6 @@ from core.ui.animations import run_with_thinking, phases_for_goal
 
 
 async def process_message_async(message: str, *, session_id: str = "default") -> int:
-
-    semantic_task = interpret_semantic_task(message)
-    semantic_response = build_semantic_response(message, semantic_task, repo_root='.')
-    if semantic_response is not None:
-        semantic_response["message"] = message
-        render_response(semantic_response)
-        return 0
-
     session = load_session(session_id)
     intent = interpret_message(message, session)
     ctx = detect_context()

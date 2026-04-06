@@ -1,29 +1,5 @@
 from __future__ import annotations
 
-
-def _semantic_intent_override(message: str):
-    spec = interpret_message(message)
-    strong = {
-        "repo_gap",
-        "repo_summary",
-        "architecture_review",
-        "weakness_analysis",
-        "productization",
-        "roadmap",
-        "test_strategy",
-        "diagnose",
-        "help",
-    }
-    if spec.intent_family in strong and spec.confidence >= 0.80:
-        return {
-            "intent": spec.intent_family,
-            "confidence": spec.confidence,
-            "strategy_reason": f"semantic override family={spec.intent_family}",
-            "task_spec": spec.to_dict(),
-        }
-    return None
-
-
 from typing import Any
 
 from .interpreter import ChatIntent

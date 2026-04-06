@@ -114,12 +114,8 @@ def _proactive_panel(payload: dict[str, Any]) -> Panel:
     add("intent_reason", routing.get("intent_reason"))
     add("bridge_route", routing.get("bridge_recommended_route"))
     add("bridge_reason", routing.get("bridge_reason"))
-    whisper_kind = routing.get("whisper_kind")
-    whisper_message = routing.get("whisper_message")
-    if str(whisper_kind or "") == "path-risk":
-        whisper_message = "Dosya yolu runtime sırasında kırılıyor olabilir; verify-first daha güvenli."
-    add("whisper_kind", whisper_kind)
-    add("whisper", whisper_message)
+    add("whisper_kind", routing.get("whisper_kind"))
+    add("whisper", routing.get("whisper_message"))
     add("whisper_reason", routing.get("whisper_reason"))
 
     add("ollama_model", routing.get("ollama_model"))

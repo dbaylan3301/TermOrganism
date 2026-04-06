@@ -3,17 +3,9 @@ from __future__ import annotations
 import os
 
 
-
-def _variation_enabled() -> bool:
-    raw = str(os.getenv("TERMORGANISM_CHAT_VARIATION", "0")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
 def _maybe_vary_narration(text: str, *, mode: str = "chat_narrator", extra_context: dict | None = None) -> str:
     base = str(text or "").strip()
     if not base:
-        return base
-    if not _variation_enabled():
         return base
     ctx = {"mode": mode}
     if extra_context:

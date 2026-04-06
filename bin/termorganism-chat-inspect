@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/TermOrganismGitFork
+source .venv/bin/activate
+TERMORGANISM_CHAT_VERBOSE=1 exec ./bin/termorganism-chat "$@"

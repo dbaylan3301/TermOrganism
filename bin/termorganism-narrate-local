@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/TermOrganismGitFork
+source .venv/bin/activate
+exec python -m core.chat.narrator_local "$@"

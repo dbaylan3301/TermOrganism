@@ -95,45 +95,59 @@ def _activity_panel(payload: dict[str, Any]) -> Panel:
 
 def _proactive_panel(payload: dict[str, Any]) -> Panel:
     routing = payload.get("routing") or {}
+    p = payload.get("proactive_signals") or {}
 
     rows: list[tuple[str, str]] = []
 
-    def add(key: str, value: object) -> None:
-        if value is None:
-            return
-        text = str(value).strip()
-        if text == "":
-            return
-        rows.append((key, text))
+    intent_focus = p.get("intent_focus") or routing.get("intent_focus")
+    if intent_focus:
+        rows.append(("intent_focus", str(intent_focus)))
 
-    intent_routes = routing.get("intent_preload_routes") or []
+    intent_routes = p.get("intent_routes") or routing.get("intent_preload_routes") or []
     if intent_routes:
-        add("intent_routes", ", ".join(str(x) for x in intent_routes))
+        rows.append(("intent_routes", ", ".join(intent_routes[:4])))
 
-    add("intent_focus", routing.get("intent_focus"))
-    add("intent_reason", routing.get("intent_reason"))
-    add("bridge_route", routing.get("bridge_recommended_route"))
-    add("bridge_reason", routing.get("bridge_reason"))
-    whisper_kind = routing.get("whisper_kind")
-    whisper_message = routing.get("whisper_message")
-    if str(whisper_kind or "") == "path-risk":
-        whisper_message = "Dosya yolu runtime sırasında kırılıyor olabilir; verify-first daha güvenli."
-    add("whisper_kind", whisper_kind)
-    add("whisper", whisper_message)
-    add("whisper_reason", routing.get("whisper_reason"))
+    intent_confidence = p.get("intent_confidence")
+    if intent_confidence not in (None, "", 0, 0.0):
+        rows.append(("intent_conf", str(intent_confidence)))
 
-    add("ollama_model", routing.get("ollama_model"))
-    add("ollama_policy", routing.get("ollama_policy"))
-    add("ollama_available", routing.get("ollama_available"))
-    add("ollama_think", routing.get("ollama_think"))
-    add("ollama_mode_bias", routing.get("ollama_mode_bias"))
-    add("ollama_verify_first", routing.get("ollama_verify_first"))
-    add("ollama_summary", routing.get("ollama_summary"))
+    intent_reason = p.get("intent_reason") or routing.get("intent_reason")
+    if intent_reason:
+        rows.append(("intent_reason", str(intent_reason)))
+
+    bridge_route = p.get("bridge_route") or routing.get("bridge_recommended_route")
+    if bridge_route:
+        rows.append(("bridge_route", str(bridge_route)))
+
+    bridge_score = p.get("bridge_score")
+    if bridge_score not in (None, "", 0, 0.0):
+        rows.append(("bridge_score", str(bridge_score)))
+
+    bridge_reason = p.get("bridge_reason") or routing.get("bridge_reason")
+    if bridge_reason:
+        rows.append(("bridge_reason", str(bridge_reason)))
+
+    whisper_kind = p.get("whisper_kind") or routing.get("whisper_kind")
+    if whisper_kind:
+        rows.append(("whisper_kind", str(whisper_kind)))
+
+    whisper_priority = p.get("whisper_priority")
+    if whisper_priority not in (None, "", 0, 0.0):
+        rows.append(("whisper_prio", str(whisper_priority)))
+
+    whisper_message = p.get("whisper_message") or routing.get("whisper_message")
+    if whisper_message:
+        rows.append(("whisper", str(whisper_message)))
+
+    whisper_reason = p.get("whisper_reason") or routing.get("whisper_reason")
+    if whisper_reason:
+        rows.append(("whisper_reason", str(whisper_reason)))
 
     if not rows:
         return Panel("[grey62]No proactive signals[/]", title="Proactive Signals", border_style=PrettyTheme.panel, box=box.ROUNDED)
 
     return _table_panel("Proactive Signals", rows)
+
 
 def _arbitration_panel(payload: dict[str, Any]) -> Panel:
     arbitration = payload.get("route_arbitration") or {}
