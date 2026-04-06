@@ -13,7 +13,6 @@ from core.chat.repo_assessment import (
     test_strategy_text,
 )
 from core.chat.task_spec import TaskSpec
-from core.security.review import run_security_review, render_security_summary
 
 
 def _base_response(message: str, spec: TaskSpec, answer: str, *, root: str) -> dict[str, Any]:
@@ -59,31 +58,6 @@ def build_semantic_response(message: str, spec: TaskSpec, repo_root: str | None 
 
     scan = scan_repo(repo_root)
     root = str(scan["repo_root"])
-
-
-    if spec.intent_family == "security_review":
-        review = run_security_review(repo_root)
-        return _base_response(message, spec, render_security_summary(review, mode="security_review"), root=root)
-
-    if spec.intent_family == "secret_exposure_audit":
-        review = run_security_review(repo_root, only={"secret_exposure"})
-        return _base_response(message, spec, render_security_summary(review, mode="secret_exposure_audit"), root=root)
-
-    if spec.intent_family == "dependency_risk_review":
-        review = run_security_review(repo_root, only={"dependency_risk"})
-        return _base_response(message, spec, render_security_summary(review, mode="dependency_risk_review"), root=root)
-
-    if spec.intent_family == "ci_cd_security_review":
-        review = run_security_review(repo_root, only={"ci_cd_security"})
-        return _base_response(message, spec, render_security_summary(review, mode="ci_cd_security_review"), root=root)
-
-    if spec.intent_family == "config_misuse_review":
-        review = run_security_review(repo_root, only={"config_misuse"})
-        return _base_response(message, spec, render_security_summary(review, mode="config_misuse_review"), root=root)
-
-    if spec.intent_family == "hardening_review":
-        review = run_security_review(repo_root)
-        return _base_response(message, spec, render_security_summary(review, mode="hardening_review"), root=root)
 
     if spec.intent_family == "repo_gap":
         gaps = top_gaps(scan)[:5]

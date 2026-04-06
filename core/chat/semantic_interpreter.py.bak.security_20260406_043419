@@ -12,37 +12,6 @@ def _norm(text: str) -> str:
 
 
 FAMILIES: list[tuple[str, list[str], str, str, bool]] = [
-    ("security_review", [
-        "güvenlik açısından ne eksik", "security review", "security audit",
-        "güvenlik analizi", "güvenlik incele", "security posture",
-        "security açısından değerlendir", "repo güvenliği"
-    ], "genel güvenlik değerlendirmesi yap", "read_only", False),
-
-    ("secret_exposure_audit", [
-        "secret sızıntısı", "secret exposure", "hardcoded secret", "anahtar sızıntısı",
-        "token sızıntısı", "secret var mı"
-    ], "secret exposure taraması yap", "read_only", False),
-
-    ("dependency_risk_review", [
-        "dependency risk", "bağımlılık riski", "dependency güvenliği", "supply chain",
-        "paket riskleri", "dependency audit"
-    ], "dependency risklerini değerlendir", "read_only", False),
-
-    ("ci_cd_security_review", [
-        "ci güvenliği", "ci/cd güvenliği", "workflow güvenliği", "github actions güvenliği",
-        "pipeline güvenliği", "ci hattını güvenlik açısından incele"
-    ], "CI/CD güvenlik değerlendirmesi yap", "read_only", False),
-
-    ("config_misuse_review", [
-        "config yanlış kullanım", "config misuse", "yanlış config", "tehlikeli config",
-        "güvensiz ayar", "config tarafında yanlış kullanım"
-    ], "config yanlış kullanım risklerini incele", "read_only", False),
-
-    ("hardening_review", [
-        "hardening planı", "hardening review", "sertleştirme planı", "secure hale getir",
-        "nasıl harden ederiz"
-    ], "hardening planı çıkar", "read_only", False),
-
     ("repo_gap", [
         "ne eksik", "neler eksik", "eksikler", "missing", "gaps", "what's missing",
         "what is missing", "hangi eksikler", "hangi boşluklar", "hangi açıklar"
