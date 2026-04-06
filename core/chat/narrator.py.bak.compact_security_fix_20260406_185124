@@ -145,33 +145,9 @@ def _render_compact(response: dict[str, Any]) -> None:
     console.print(thinking_panel)
     console.print(result_panel)
 
-    security_review = response.get("security_review") or {}
-    if security_review:
-        counts = security_review.get("counts") or {}
-        lines = [
-            f"overall_risk={security_review.get('overall_risk', '-')}",
-            f"critical={counts.get('critical', 0)} high={counts.get('high', 0)} medium={counts.get('medium', 0)} low={counts.get('low', 0)}",
-        ]
-        for i, item in enumerate((security_review.get("top_findings") or [])[:5], start=1):
-            sev = str(item.get("severity", "-"))
-            title = str(item.get("title", "-"))
-            fp = str(item.get("file_path", "-"))
-            why = str(item.get("why", "") or "")
-            fix = str(item.get("remediation", "") or "")
-            line = f"{i}. [{sev}] {title} :: {fp}"
-            if why:
-                line += f" | why: {why}"
-            if fix:
-                line += f" | fix: {fix}"
-            lines.append(line[:220])
-        console.print(
-            Panel(
-                "\n".join(lines),
-                title="Security Review",
-                border_style="rgb(210,175,120)",
-                box=box.ROUNDED,
-            )
-        )
+    if extra_panels:
+        for panel in extra_panels:
+            console.print(panel)
 
 
 def _prepare_varied_response(response: dict[str, Any]) -> dict[str, Any]:
