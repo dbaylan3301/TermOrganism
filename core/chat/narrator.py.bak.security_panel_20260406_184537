@@ -237,16 +237,6 @@ def _render_plain(response: dict[str, Any]) -> None:
         print(f"- focus: {intent_ctx.get('focus', '-')}")
         print(f"- confidence: {intent_ctx.get('confidence', '-')}")
 
-    security_review = response.get("security_review") or {}
-    if security_review:
-        counts = security_review.get("counts") or {}
-        print("")
-        print("Security Review:")
-        print(f"- overall_risk: {security_review.get('overall_risk', '-')}")
-        print(f"- critical/high/medium/low: {counts.get('critical', 0)}/{counts.get('high', 0)}/{counts.get('medium', 0)}/{counts.get('low', 0)}")
-        for i, item in enumerate((security_review.get('top_findings') or [])[:5], start=1):
-            print(f"- finding_{i}: [{item.get('severity', '-')}] {item.get('title', '-')} :: {item.get('file_path', '-')}")
-
 
 def _kv_panel(title: str, rows: list[tuple[str, str]]) -> Panel:
     table = Table(box=box.SIMPLE_HEAVY, show_header=False, expand=True, padding=(0, 1))
@@ -255,45 +245,6 @@ def _kv_panel(title: str, rows: list[tuple[str, str]]) -> Panel:
     for k, v in rows:
         table.add_row(k, v)
     return Panel(table, title=title, border_style="rgb(110,90,180)", box=box.ROUNDED)
-
-
-def _security_panel(review: dict[str, Any], *, mode: str = "security_review") -> Panel:
-    counts = review.get("counts") or {}
-    overall = str(review.get("overall_risk", "-"))
-    top = list(review.get("top_findings") or [])
-
-    rows = [
-        ("overall_risk", overall),
-        ("critical", str(counts.get("critical", 0))),
-        ("high", str(counts.get("high", 0))),
-        ("medium", str(counts.get("medium", 0))),
-        ("low", str(counts.get("low", 0))),
-        ("mode", mode),
-    ]
-
-    body = [Group(_kv_panel("Security Summary", rows))]
-    if top:
-        table = Table(box=box.SIMPLE_HEAVY, show_header=True, expand=True, padding=(0, 1))
-        table.add_column("severity", style="bold")
-        table.add_column("title", style="white")
-        table.add_column("file", style="grey70")
-        table.add_column("why/fix", style="white")
-
-        for item in top[:5]:
-            why = str(item.get("why", "") or "")
-            fix = str(item.get("remediation", "") or "")
-            why_fix = why
-            if fix:
-                why_fix = f"{why} | fix: {fix}" if why else f"fix: {fix}"
-            table.add_row(
-                str(item.get("severity", "-")),
-                str(item.get("title", "-")),
-                str(item.get("file_path", "-")),
-                why_fix[:180] or "-",
-            )
-        body.append(Panel(table, title="Top Security Findings", border_style="rgb(110,90,180)", box=box.ROUNDED))
-
-    return Panel(Group(*body), title="Security Review", border_style="rgb(210,175,120)", box=box.ROUNDED)
 
 
 def _render_pretty(response: dict[str, Any]) -> None:
