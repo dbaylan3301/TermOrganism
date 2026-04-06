@@ -271,51 +271,11 @@ def _scan_dependencies(root: Path) -> list[dict[str, Any]]:
                         confidence=0.74,
                     ))
 
-        elif p.name == "pyproject.toml":
-            if re.search(r"(?im)\b(git|path|url)\s*=", txt):
-                findings.append(_finding(
-                    kind="dependency_risk",
-                    severity="medium",
-                    title="pyproject içinde git/path/url dependency görünüyor",
-                    evidence="git/path/url dependency",
-                    file_path=str(p.relative_to(root)),
-                    remediation="Yerel/path/git dependency kullanımını minimize et; registry sürümü tercih et.",
-                    why="Yerel veya dış kaynak dependency zinciri reproducibility ve supply-chain riskini artırır.",
-                    confidence=0.79,
-                ))
-
-            dep_lines = []
-            in_dep_block = False
-            for line in txt.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("[project]") or stripped.startswith("[tool.poetry.dependencies]"):
-                    in_dep_block = True
-                    continue
-                if stripped.startswith("[") and stripped.endswith("]") and not stripped.startswith("[tool.poetry.dependencies]"):
-                    in_dep_block = False
-                if in_dep_block and "=" in line:
-                    dep_lines.append(line.strip())
-
-            for raw in dep_lines[:40]:
-                if not any(op in raw for op in ["==", "~=", "<=", ">=", "<", ">", "^"]):
-                    findings.append(_finding(
-                        kind="dependency_risk",
-                        severity="low",
-                        title="pyproject dependency sürüm sınırı zayıf olabilir",
-                        evidence=raw[:160],
-                        file_path=str(p.relative_to(root)),
-                        remediation="Üretim kritik paketler için net sürüm aralığı tanımla.",
-                        why="Belirsiz sürüm sınırları beklenmeyen yükseltmelere yol açabilir.",
-                        confidence=0.65,
-                    ))
-                    break
-
         elif p.name == "package.json":
             try:
                 data = json.loads(txt)
             except Exception:
                 data = {}
-
             for sec in ["dependencies", "devDependencies"]:
                 deps = data.get(sec) or {}
                 for name, ver in deps.items():
@@ -344,6 +304,8 @@ def _scan_dependencies(root: Path) -> list[dict[str, Any]]:
                         ))
 
     return findings
+
+
 def _scan_ci(root: Path) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
 
@@ -376,33 +338,9 @@ def _scan_ci(root: Path) -> list[dict[str, Any]]:
                 confidence=0.84,
             ))
 
-        if "runs-on: self-hosted" in txt:
-            findings.append(_finding(
-                kind="ci_cd_security",
-                severity="medium",
-                title="Self-hosted runner kullanılıyor",
-                evidence="runs-on: self-hosted",
-                file_path=str(wf.relative_to(root)),
-                remediation="Runner izolasyonu, ağ erişimi ve secret scope'unu sıkılaştır.",
-                why="Self-hosted runner'lar hosted runner'lara göre daha geniş saldırı yüzeyi taşıyabilir.",
-                confidence=0.77,
-            ))
-
-        for m in re.finditer(r"uses:\s*([^\s@]+)@([^\s]+)", txt):
-            action, ref = m.group(1), m.group(2)
-            if not re.fullmatch(r"[a-f0-9]{40}", ref):
-                findings.append(_finding(
-                    kind="ci_cd_security",
-                    severity="low",
-                    title="GitHub Action SHA ile pinlenmemiş",
-                    evidence=f"{action}@{ref}",
-                    file_path=str(wf.relative_to(root)),
-                    remediation="Özellikle üçüncü parti action'ları commit SHA ile pinle.",
-                    why="Tag veya branch referansları zamanla değişebilir.",
-                    confidence=0.67,
-                ))
-
     return findings
+
+
 def _scan_config_and_code(root: Path) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
 
