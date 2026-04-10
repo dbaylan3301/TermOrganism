@@ -1,5 +1,4 @@
 from __future__ import annotations
-import shlex
 
 import ast
 import importlib.util
@@ -181,7 +180,7 @@ def analyze_python_text(
                 severity="warning",
                 priority=0.86,
                 confidence=0.9,
-                message="subprocess shell=False komut enjeksiyonu ve quoting riski taşıyor",
+                message="subprocess shell=True komut enjeksiyonu ve quoting riski taşıyor",
                 line=text[:m.start()].count("\n") + 1 if m else 1,
                 column=0,
                 code="subprocess-shell",

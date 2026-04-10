@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
 from __future__ import annotations
+from __future__ import annotations
+#!/usr/bin/env python3
 
 from pathlib import Path
 
@@ -540,7 +541,6 @@ def synthesize_and_check_contract(*, before_error_text: str, branch_result: dict
 ''',
 
     "planner_probe.py": r'''#!/usr/bin/env python3
-from __future__ import annotations
 
 import json
 

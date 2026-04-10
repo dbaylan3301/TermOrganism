@@ -1,5 +1,4 @@
 from __future__ import annotations
-import shlex
 
 import hashlib
 from dataclasses import dataclass, asdict
@@ -399,7 +398,7 @@ def build_code_actions_for_text(text: str, *, file_path: str) -> dict[str, Any]:
                 diagnostic_kind=kind,
                 message=message,
                 line=line,
-                preview="Öneri: shell=False yerine arg listesi ver ve shell=False kullan.",
+                preview="Öneri: shell=True yerine arg listesi ver ve shell=False kullan.",
             ))
 
         elif kind == "wildcard-import-risk":

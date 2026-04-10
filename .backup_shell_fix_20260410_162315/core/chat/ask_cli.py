@@ -1,5 +1,4 @@
 from __future__ import annotations
-import shlex
 
 import argparse
 import json
@@ -26,7 +25,7 @@ def _run(cmd: str, cwd: str | None = None, timeout: int = 90) -> dict:
         p = subprocess.run(
             cmd,
             cwd=cwd,
-            shell=False,
+            shell=True,
             capture_output=True,
             text=True,
             timeout=timeout,

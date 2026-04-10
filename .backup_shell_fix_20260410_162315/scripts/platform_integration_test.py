@@ -1,5 +1,4 @@
 from __future__ import annotations
-import shlex
 #!/usr/bin/env python3
 
 import json
@@ -45,7 +44,7 @@ def run_json(cmd: str) -> dict:
     res = subprocess.run(
         cmd,
         cwd=str(ROOT),
-        shell=False,
+        shell=True,
         capture_output=True,
         text=True,
     )

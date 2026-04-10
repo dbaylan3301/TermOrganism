@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 from __future__ import annotations
+#!/usr/bin/env python3
 
 from pathlib import Path
 
@@ -116,7 +116,7 @@ def execute_safe_suggestions(
 
         proc = subprocess.run(
             cmd,
-            shell=True,
+            shell=False,
             cwd=workdir,
             capture_output=True,
             text=True,

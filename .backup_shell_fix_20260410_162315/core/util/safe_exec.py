@@ -108,7 +108,7 @@ def execute_safe_suggestions(
 
         proc = subprocess.run(
             cmd,
-            shell=False,
+            shell=True,
             cwd=workdir,
             capture_output=True,
             text=True,

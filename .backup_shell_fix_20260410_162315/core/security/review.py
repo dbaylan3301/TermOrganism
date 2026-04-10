@@ -1,5 +1,4 @@
 from __future__ import annotations
-import shlex
 
 import json
 import os
@@ -18,9 +17,9 @@ SKIP_DIRS = {
 SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 
 CODE_PATTERNS = [
-    ("config_misuse", "medium", r"shell\s*=\s*True", "subprocess shell=False kullanımı",
+    ("config_misuse", "medium", r"shell\s*=\s*True", "subprocess shell=True kullanımı",
      "shell=False ve arg listesi kullan.",
-     "shell=False komut enjeksiyonu ve beklenmeyen shell davranışı riskini artırır."),
+     "shell=True komut enjeksiyonu ve beklenmeyen shell davranışı riskini artırır."),
     ("config_misuse", "medium", r"\beval\s*\(", "eval kullanımı",
      "eval yerine güvenli parser kullan.",
      "eval doğrudan yürütme yüzeyi açar."),

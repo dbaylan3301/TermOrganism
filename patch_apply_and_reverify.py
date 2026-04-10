@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
 from __future__ import annotations
+from __future__ import annotations
+#!/usr/bin/env python3
 
 from pathlib import Path
 
@@ -431,7 +432,6 @@ def run_autofix(error_text: str, file_path: str | None = None, auto_apply: bool 
 ''',
 
     "apply_test_termorganism.py": '''#!/usr/bin/env python3
-from __future__ import annotations
 
 from pathlib import Path
 import json
