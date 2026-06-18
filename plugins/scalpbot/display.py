@@ -140,24 +140,6 @@ def display_signal(result: SignalResult):
 │  [{time.strftime('%Y-%m-%d %H:%M:%S UTC')}]                               │
 └─────────────────────────────────────────────────────────────┘[/bold {color}]"""
 
-    info_table = Table(show_header=False, box=None, padding=(0, 2))
-    info_table.add_column("Key", style="#6B7280", width=14)
-    info_table.add_column("Value", style="bold #F8FAFC")
-
-    info_table.add_row("Giriş Fiyatı", f"[bold {color}]{format_price(result.entry_price)}[/bold {color}]")
-    info_table.add_row("Stop Loss", f"[#EF4444]{format_price(result.sl_price)}[/#EF4444]")
-    info_table.add_row("Take Profit", f"[#10B981]{format_price(result.tp_price)}[/#10B981]")
-    info_table.add_row("Kaldıraç", f"[#F59E0B]{result.leverage}x[/#F59E0B]")
-    info_table.add_row("Risk/Kazanç", f"[bold #7C3AED]1:{result.risk_reward:.2f}[/bold #7C3AED]")
-
-    risk_pct = abs(result.entry_price - result.sl_price) / result.entry_price * 100 * result.leverage
-    reward_pct = abs(result.tp_price - result.entry_price) / result.entry_price * 100 * result.leverage
-    info_table.add_row("Potansiyel K/Z", f"[#10B981]+{reward_pct:.1f}%[/#10B981] / [#EF4444]-{risk_pct:.1f}%[/#EF4444]")
-
-    # Confidence bar
-    conf_bar = get_confidence_bar(result.confidence)
-    info_table.add_row("Güvenilirlik", f"{conf_bar} [{conf_color}]{result.confidence:.0f}%[/{conf_color}]")
-
     # Conditions with weights
     cond_lines = []
     weight_map = {
@@ -187,7 +169,13 @@ def display_signal(result: SignalResult):
         display_name = ind_names.get(name, name)
         ind_lines.append(f"  [dim]{display_name}[/dim]: {val:.4f}")
 
-    content = f"""{info_table}
+    # Build content as text only
+    content = f"""
+[bold #F8FAFC]Giriş Fiyatı:[/bold #F8FAFC]  [bold {color}]{format_price(result.entry_price)}[/bold {color}]
+[bold #F8FAFC]Stop Loss:[/bold #F8FAFC]     [#EF4444]{format_price(result.sl_price)}[/#EF4444]
+[bold #F8FAFC]Take Profit:[/bold #F8FAFC]   [#10B981]{format_price(result.tp_price)}[/#10B981]
+[bold #F8FAFC]Kaldıraç:[/bold #F8FAFC]      [#F59E0B]{result.leverage}x[/#F59E0B]
+[bold #F8FAFC]Risk/Kazanç:[/bold #F8FAFC]   [bold #7C3AED]1:{result.risk_reward:.2f}[/bold #7C3AED]
 
 [bold #7C3AED]━━━ Koşullar & Ağırlıklar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]
 {chr(10).join(cond_lines)}
@@ -198,7 +186,7 @@ def display_signal(result: SignalResult):
 [bold #F59E0B]📌 Komut:[/bold #F59E0B] python -m plugins.scalpbot track --symbol {result.symbol} --direction {result.signal} --entry {format_price(result.entry_price)} --sl {format_price(result.sl_price)} --tp {format_price(result.tp_price)}"""
 
     panel = Panel(
-        Align.left(content),
+        content,
         title=header,
         title_align="left",
         border_style=color,
