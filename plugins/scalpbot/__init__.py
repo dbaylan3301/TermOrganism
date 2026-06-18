@@ -24,17 +24,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="5x Scalp Bot - Crypto Futures Signal Engine",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-[bold #00D4AA]Örnekler:[/bold #00D4AA]
-
-  [bold]Tarama:[/bold]     python -m plugins.scalpbot scan
-  [bold]Pozisyon:[/bold]   python -m plugins.scalpbot track --symbol BTC --direction LONG --entry 65000 --sl 64000 --tp 67000
-
-[bold #7C3AED]Modüller:[/bold #7C3AED]
-  scan    - Piyasayı tarar, sinyal üretir
-  track   - Pozisyonu canlı takip eder
-"""
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Komut")
