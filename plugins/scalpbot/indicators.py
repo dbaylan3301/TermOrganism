@@ -56,8 +56,11 @@ def calc_volume_spike(volumes: np.ndarray, lookback: int = 14,
                       spike_lookback: int = 5, mult: float = 1.9) -> Tuple[bool, float]:
     if len(volumes) < lookback + spike_lookback:
         return False, 0.0
-    recent_avg = np.mean(volumes[-spike_lookback:])
-    lookback_avg = np.mean(volumes[-(lookback + spike_lookback):-spike_lookback])
+    non_zero = volumes[volumes > 0]
+    if len(non_zero) < lookback + spike_lookback:
+        return False, 0.0
+    recent_avg = np.mean(non_zero[-spike_lookback:])
+    lookback_avg = np.mean(non_zero[-(lookback + spike_lookback):-spike_lookback])
     if lookback_avg == 0:
         return False, 0.0
     ratio = recent_avg / lookback_avg
