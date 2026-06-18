@@ -102,11 +102,14 @@ def display_screening_results(screened: list):
     table.add_column("RSI", width=6)
     table.add_column("ATR%", width=8)
     table.add_column("VOL", width=8)
+    table.add_column("PATTERN", style="#7C3AED", width=10)
     table.add_column("SEBEP", style="#6B7280", no_wrap=True)
 
     for i, coin in enumerate(screened[:5], 1):
         rsi_color = "#10B981" if 40 <= coin.get("rsi", 50) <= 60 else "#F97316"
         score_color = "#10B981" if coin["score"] >= 70 else "#F59E0B" if coin["score"] >= 50 else "#6B7280"
+        patterns = coin.get("patterns", [])
+        pattern_str = ", ".join(patterns[:2]) if patterns else "-"
 
         table.add_row(
             str(i),
@@ -115,6 +118,7 @@ def display_screening_results(screened: list):
             f"[{rsi_color}]{coin.get('rsi', 0):.0f}[/{rsi_color}]",
             f"{coin.get('atr_pct', 0):.3f}%",
             f"{coin.get('vol_ratio', 0):.1f}x",
+            f"[#7C3AED]{pattern_str}[/#7C3AED]",
             coin["reasons"][0] if coin["reasons"] else "-"
         )
 

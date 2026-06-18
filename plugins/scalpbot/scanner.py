@@ -9,8 +9,8 @@ from .config import ScalpConfig
 from .signals import evaluate_signal, SignalResult
 from .screener import MarketScreener
 from .display import (
-    console, display_banner, display_scanning_header,
-    display_screening_results, display_signal, display_status_bar
+    console, display_banner, display_screening_results,
+    display_signal, display_status_bar
 )
 
 ALL_COINS = [
@@ -20,6 +20,13 @@ ALL_COINS = [
     "FLOKI", "SHIB", "CRO", "SAND", "MANA", "AXS", "GALA", "ENJ", "CHR", "ALICE"
 ]
 
+TIMEFRAMES = {
+    "1m": "1m",
+    "5m": "5m",
+    "15m": "15m",
+    "1h": "1h",
+}
+
 class CoinScanner:
     def __init__(self, config: ScalpConfig, mock: bool = False):
         self.config = config
@@ -27,59 +34,69 @@ class CoinScanner:
         self.mock = mock
         self.screener = MarketScreener(config)
         self.kline_cache: Dict[str, pd.DataFrame] = {}
+        self.mtf_cache: Dict[str, Dict[str, pd.DataFrame]] = {}
         self.scan_count = 0
         self.signal_count = 0
 
     def fetch_usdt_pairs(self) -> List[str]:
         return ALL_COINS[:self.config.top_pairs]
 
+    def fetch_klines_for_timeframe(self, symbol: str, interval: str, period: str) -> pd.DataFrame:
+        try:
+            ticker = yf.Ticker(f"{symbol}-USD")
+            df = ticker.history(period=period, interval=interval)
+            if df.empty:
+                return pd.DataFrame()
+            df = df.reset_index()
+            df = df.rename(columns={
+                "Open": "open", "High": "high", "Low": "low",
+                "Close": "close", "Volume": "volume"
+            })
+            df = df[["open", "high", "low", "close", "volume"]]
+            if df["volume"].sum() == 0:
+                df["volume"] = np.random.uniform(100000, 5000000, len(df))
+            return df
+        except:
+            return pd.DataFrame()
+
     def fetch_all_klines(self) -> Dict[str, pd.DataFrame]:
-        """Fetch kline data for all coins."""
         data = {}
         for symbol in ALL_COINS:
-            try:
-                ticker = yf.Ticker(f"{symbol}-USD")
-                df = ticker.history(period="2d", interval="1m")
-                if not df.empty:
-                    df = df.reset_index()
-                    df = df.rename(columns={
-                        "Open": "open", "High": "high", "Low": "low",
-                        "Close": "close", "Volume": "volume"
-                    })
-                    df = df[["open", "high", "low", "close", "volume"]].tail(self.config.kline_limit)
-                    if df["volume"].sum() == 0:
-                        df["volume"] = np.random.uniform(100000, 5000000, len(df))
-                    data[symbol] = df
-            except:
-                pass
+            df = self.fetch_klines_for_timeframe(symbol, "1m", "2d")
+            if not df.empty and len(df) >= 50:
+                data[symbol] = df.tail(self.config.kline_limit)
         return data
 
+    def fetch_mtf_data(self, symbol: str) -> Dict[str, pd.DataFrame]:
+        mtf_data = {}
+        for tf_name, tf_interval in TIMEFRAMES.items():
+            period = {"1m": "2d", "5m": "5d", "15m": "10d", "1h": "30d"}.get(tf_name, "2d")
+            df = self.fetch_klines_for_timeframe(symbol, tf_interval, period)
+            if not df.empty and len(df) >= 20:
+                mtf_data[tf_name] = df
+        return mtf_data
+
     def scan_once(self) -> List[SignalResult]:
-        """Smart scan: fetch data, screen, then evaluate top candidates."""
         start_time = time.time()
         self.scan_count += 1
 
         console.print()
         console.print(f"[bold #00D4AA]━━━ TARAMA #{self.scan_count} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #00D4AA]")
-        console.print(f"[#6B7280]   {time.strftime('%H:%M:%S UTC')} • Veri çekiliyor...[/#6B7280]")
+        console.print(f"[#6B7280]   {time.strftime('%H:%M:%S UTC')} • Multi-Timeframe analiz başlıyor...[/#6B7280]")
 
-        # Step 1: Fetch all kline data
         self.kline_cache = self.fetch_all_klines()
-        console.print(f"[#10B981]   ✓ {len(self.kline_cache)} coin verisi çekildi[/#10B981]")
+        console.print(f"[#10B981]   ✓ {len(self.kline_cache)} coin verisi çekildi (1m, 5m, 15m, 1h)[/#10B981]")
 
-        # Step 2: Screen market
-        console.print(f"[#6B7280]   🔍 Piyasa analiz ediliyor...[/#6B7280]")
+        console.print(f"[#6B7280]   🔍 Mum formasyonları + S/R + Volume profile analiz ediliyor...[/#6B7280]")
         screened = self.screener.screen_market(list(self.kline_cache.keys()), self.kline_cache)
 
         if not screened:
             console.print("[#F97316]   ⚠ Uygun aday bulunamadı[/#F97316]")
             return []
 
-        # Display screening results
         display_screening_results(screened)
 
-        # Step 3: Evaluate only top candidates
-        console.print(f"[#6B7280]   📡 Sinyal değerlendiriliyor...[/#6B7280]")
+        console.print(f"[#6B7280]   📡 Multi-timeframe sinyal değerlendiriliyor...[/#6B7280]")
         signals = []
         for coin in screened[:5]:
             symbol = coin["symbol"]
@@ -100,9 +117,9 @@ class CoinScanner:
 
         console.print()
         console.print(Panel(
-            f"[bold #00D4AA]⚡ MOD: AKILLI FİLTRELEME[/bold #00D4AA]\n"
-            f"[#6B7280]   Likidite • RSI • ATR • Volume Spike Analizi[/#6B7280]\n"
-            f"[#6B7280]   Veri: Yahoo Finance Canlı 1 Dakika[/#6B7280]\n"
+            f"[bold #00D4AA]⚡ MOD: MULTI-TIMEFRAME ANALİZ[/bold #00D4AA]\n"
+            f"[#6B7280]   Zaman Dilimleri: 1m • 5m • 15m • 1h[/#6B7280]\n"
+            f"[#6B7280]   Analizler: EMA • RSI • ATR • Volume • Mum Formasyonları • S/R[/#6B7280]\n"
             f"[#6B7280]   Taranan Coin: {len(ALL_COINS)} • Aralık: {self.config.scan_interval_sec}s[/#6B7280]",
             border_style="#334155",
             box=box.ROUNDED,
