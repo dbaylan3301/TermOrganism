@@ -119,8 +119,15 @@ def evaluate_signal(df: pd.DataFrame, config: ScalpConfig,
     }
     short_confidence, short_level = calculate_confidence(short_scores)
 
-    # Select best signal
-    if long_confidence >= short_confidence and long_ema and long_rsi:
+    # Select best signal - REQUIRE MINIMUM 4 CONDITIONS
+    long_conditions_met = sum([long_ema, long_rsi, long_atr, long_vol, long_trigger])
+    short_conditions_met = sum([short_ema, short_rsi, short_atr, short_vol, short_trigger])
+
+    MIN_CONDITIONS = 4  # Minimum 4 koşul sağlanmalı
+    MIN_CONFIDENCE = 70  # Minimum %70 güvenilirlik
+
+    if (long_confidence >= short_confidence and long_conditions_met >= MIN_CONDITIONS
+        and long_confidence >= MIN_CONFIDENCE):
         atr_val = atr[-1]
         result.signal = "LONG"
         result.entry_price = current_price
@@ -136,7 +143,8 @@ def evaluate_signal(df: pd.DataFrame, config: ScalpConfig,
             "trigger_ok": long_trigger,
         }
         result.condition_scores = long_scores
-    elif short_confidence > long_confidence and short_ema and short_rsi:
+    elif (short_confidence > long_confidence and short_conditions_met >= MIN_CONDITIONS
+          and short_confidence >= MIN_CONFIDENCE):
         atr_val = atr[-1]
         result.signal = "SHORT"
         result.entry_price = current_price
