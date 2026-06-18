@@ -106,6 +106,11 @@ class CoinScanner:
                     signals.append(result)
                     self.signal_count += 1
 
+        # Return only the best signal (highest confidence)
+        if signals:
+            signals.sort(key=lambda x: x.confidence, reverse=True)
+            signals = [signals[0]]  # Only best one
+
         scan_time = time.time() - start_time
         display_status_bar(self.signal_count, scan_time)
 
