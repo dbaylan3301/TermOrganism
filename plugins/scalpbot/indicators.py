@@ -37,9 +37,12 @@ def calc_rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
 
 def calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
              period: int = 7) -> np.ndarray:
+    """Calculate ATR using Wilder's method (more stable)."""
     atr = np.full_like(highs, np.nan, dtype=float)
-    if len(highs) < period + 1:
+    if len(highs) < period + 10:  # Daha fazla veri zorunlu
         return atr
+
+    # Calculate True Range
     tr = np.maximum(
         highs[1:] - lows[1:],
         np.maximum(
@@ -47,9 +50,15 @@ def calc_atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray,
             np.abs(lows[1:] - closes[:-1])
         )
     )
+
+    if len(tr) < period:
+        return atr
+
+    # Wilder's smoothing (daha stabil)
     atr[period] = np.mean(tr[:period])
     for i in range(period, len(tr)):
         atr[i + 1] = (atr[i] * (period - 1) + tr[i]) / period
+
     return atr
 
 def calc_volume_spike(volumes: np.ndarray, lookback: int = 14,

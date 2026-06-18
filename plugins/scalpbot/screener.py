@@ -48,42 +48,50 @@ class MarketScreener:
         score = 0
         reasons = []
 
-        # EMA proximity (0-30)
+        # EMA proximity (0-35)
         if ind["ema_diff"] < 0.05:
-            score += 30
+            score += 35
             reasons.append("EMA crossover çok yakın")
         elif ind["ema_diff"] < 0.1:
-            score += 20
-            reasons.append("EMA yakınsıyor")
-
-        # RSI zone (0-25)
-        if 40 <= ind["rsi"] <= 60:
             score += 25
-            reasons.append(f"RSI nötr ({ind['rsi']:.0f})")
-        elif 35 <= ind["rsi"] <= 65:
+            reasons.append("EMA yakınsıyor")
+        elif ind["ema_diff"] < 0.2:
             score += 15
-            reasons.append(f"RSI yakın ({ind['rsi']:.0f})")
+            reasons.append("EMA yaklaşıyor")
 
-        # ATR volatility (0-15)
+        # RSI zone (0-20) - Daha katı
+        if 38 <= ind["rsi"] <= 58:
+            score += 20
+            reasons.append(f"RSI ideal ({ind['rsi']:.0f})")
+        elif 35 <= ind["rsi"] <= 62:
+            score += 10
+            reasons.append(f"RSI uygun ({ind['rsi']:.0f})")
+
+        # ATR volatility (0-15) - Minimum %0.12
         if ind["atr_pct"] > 0.18:
             score += 15
             reasons.append(f"Volatilite yüksek ({ind['atr_pct']:.3f}%)")
         elif ind["atr_pct"] > 0.12:
-            score += 8
-            reasons.append(f"Volatilite orta ({ind['atr_pct']:.3f}%)")
-
-        # Volume (0-20)
-        if ind["vol_spike"]:
-            score += 20
-            reasons.append(f"Volume spike ({ind['vol_ratio']:.1f}x)")
-        elif ind["vol_ratio"] > 1.3:
             score += 10
+            reasons.append(f"Volatilite orta ({ind['atr_pct']:.3f}%)")
+        elif ind["atr_pct"] < 0.12:
+            reasons.append(f"Volatilite düşük ({ind['atr_pct']:.3f}%)")
+
+        # Volume (0-25) - En önemli
+        if ind["vol_spike"]:
+            score += 25
+            reasons.append(f"Volume spike ({ind['vol_ratio']:.1f}x)")
+        elif ind["vol_ratio"] > 1.5:
+            score += 15
+            reasons.append(f"Volume güçlü ({ind['vol_ratio']:.1f}x)")
+        elif ind["vol_ratio"] > 1.2:
+            score += 8
             reasons.append(f"Volume yükseliyor ({ind['vol_ratio']:.1f}x)")
 
-        # Candlestick patterns (0-15)
+        # Candlestick patterns (0-10)
         if patterns["pattern_count"] > 0:
-            score += min(patterns["pattern_count"] * 5, 15)
-            reasons.append(f"Mum formasyonu: {', '.join(patterns['patterns'][:2])}")
+            score += min(patterns["pattern_count"] * 3, 10)
+            reasons.append(f"Mum: {', '.join(patterns['patterns'][:2])}")
 
         # Support/Resistance (0-10)
         sr = patterns["support_resistance"]
@@ -94,14 +102,11 @@ class MarketScreener:
             score += 5
             reasons.append("Direnç seviyesinde")
 
-        # Volume profile (0-10)
+        # Volume profile (0-5)
         vp = patterns["volume_profile"]
         if vp["accumulation"]:
-            score += 10
-            reasons.append("Birikim fazında")
-        elif vp["distribution"]:
             score += 5
-            reasons.append("Dağıtım fazında")
+            reasons.append("Birikim fazında")
 
         return {
             "symbol": symbol,

@@ -166,4 +166,11 @@ def evaluate_signal(df: pd.DataFrame, config: ScalpConfig,
         result.risk_reward = reward / risk if risk > 0 else 0
         result.leverage = config.leverage
 
+        # Minimum Risk/Reward kontrolü
+        if result.risk_reward < config.min_risk_reward:
+            result.signal = "NONE"
+            result.confidence = 0
+            result.conditions = {}
+            result.condition_scores = {}
+
     return result

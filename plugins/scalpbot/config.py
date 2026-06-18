@@ -11,9 +11,9 @@ class ScalpConfig:
     rsi_long_max: float = 62.0
     rsi_short_min: float = 38.0
 
-    # ATR
+    # ATR - Daha stabil hesaplama
     atr_period: int = 7
-    atr_min_pct: float = 0.10  # Düşürüldü: 0.18 → 0.10
+    atr_min_pct: float = 0.12  # Minimum %0.12 volatilite
 
     # Volume
     volume_lookback: int = 14
@@ -23,21 +23,27 @@ class ScalpConfig:
     # Trigger
     trigger_bps: float = 12.0
 
-    # Risk
+    # Risk - İyileştirilmiş SL/TP
     leverage: int = 5
-    sl_atr_mult: float = 1.5
-    tp_atr_mult: float = 1.7
+    sl_atr_mult: float = 1.4   # Daha geniş SL (5x için)
+    tp_atr_mult: float = 2.4   # Daha geniş TP (1:1.7+ hedef)
+    min_risk_reward: float = 1.65  # Minimum R/R oranı
 
-    # Signal requirements - STRICT
-    min_conditions: int = 4  # Minimum 4/5 koşul sağlanmalı
-    min_confidence: float = 70.0  # Minimum %70 güvenilirlik
+    # Signal requirements
+    min_conditions: int = 3
+    min_confidence: float = 60.0
+    min_score: int = 75  # Minimum sinyal skoru
 
     # Scanner
     kline_interval: str = "1m"
-    kline_limit: int = 200
+    kline_limit: int = 250  # Daha fazla veri
     scan_interval_sec: int = 60
     top_pairs: int = 50
     price_refresh_sec: int = 1
+
+    # Signal confirmation
+    signal_cooldown_sec: int = 180  # 3 dakika cooldown
+    confidence_diff_for_new_coin: float = 15.0  # Farklı coin için %15 fark
 
     @classmethod
     def from_dict(cls, d: dict) -> "ScalpConfig":
