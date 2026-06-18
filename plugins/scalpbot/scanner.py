@@ -88,7 +88,7 @@ class CoinScanner:
 
         # Same coin, same direction - always confirm
         if (new_signal.symbol == self.last_signal.symbol and
-            new_signal.direction == self.last_signal.direction):
+            new_signal.signal == self.last_signal.signal):
             return True
 
         # Different direction - require minimum cooldown
