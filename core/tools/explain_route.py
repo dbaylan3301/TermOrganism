@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO = Path("/root/TermOrganismGitFork")
+REPO = Path(__file__).resolve().parents[2]
 
 
 def _run_repair(target: str) -> dict[str, Any]:

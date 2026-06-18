@@ -10,5 +10,5 @@ python3 -c "import requests" >/dev/null 2>&1 && echo "OK: requests" || echo "MIS
 [ -f "$HOME/.termorganism/core/autofix.py" ] && echo "OK: core/autofix.py" || echo "MISS: core/autofix.py"
 [ -f "$HOME/.zsh/organism_guard.zsh" ] && echo "OK: organism_guard.zsh" || echo "MISS: organism_guard.zsh"
 
-command -v omega-autofix >/dev/null 2>&1 && echo "OK: omega-autofix" || echo "MISS: omega-autofix"
-command -v omega-stats >/dev/null 2>&1 && echo "OK: omega-stats" || echo "MISS: omega-stats"
+command -v termorganism >/dev/null 2>&1 && echo "OK: termorganism" || echo "MISS: termorganism"
+[ -f "$HOME/.local/share/termorganism/bin/termorganism" ] && echo "OK: installed" || echo "MISS: not installed (run install.sh)"

@@ -49,15 +49,6 @@ class HealReport:
     actions: list[dict[str, Any]]
 
 
-def _critical_files() -> list[Path]:
-    out = []
-    for rel in CRITICAL_RELATIVE_PATHS:
-        p = ROOT / rel
-        if p.exists():
-            out.append(p)
-    return out
-
-
 def _parse_line_no(msg: str) -> int | None:
     patterns = [
         r"line (\d+)",

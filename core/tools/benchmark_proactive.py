@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-REPO = Path("/root/TermOrganismGitFork")
+REPO = Path(__file__).resolve().parents[2]
 TMP = Path("/tmp/termorganism_bench")
 TMP.mkdir(parents=True, exist_ok=True)
 

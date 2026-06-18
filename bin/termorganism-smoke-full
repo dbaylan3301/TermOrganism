@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /root/TermOrganismGitFork
+cd "$(dirname "$0")/.."
 
 echo "[1/5] live"
 timeout 2 ./bin/termorganism-live /tmp/live_demo.py || true

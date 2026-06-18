@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /root/TermOrganismGitFork
+cd "$(dirname "$0")/.."
 
 pkill -f "python3 -m core.daemon.server" >/dev/null 2>&1 || true
 rm -f /tmp/termorganism.sock

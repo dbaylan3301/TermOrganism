@@ -1,36 +1,33 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="${HOME}/.local/share/termorganism"
 
-mkdir -p "$HOME/.termorganism/core" "$HOME/.termorganism/memory" "$HOME/.zsh" "$HOME/bin"
+echo "Installing TermOrganism..."
 
-cp -f "$REPO_DIR/core/"*.py "$HOME/.termorganism/core/" 2>/dev/null || true
-cp -f "$REPO_DIR/bin/"* "$HOME/bin/" 2>/dev/null || true
-cp -f "$REPO_DIR/zsh/"*.zsh "$HOME/.zsh/" 2>/dev/null || true
+# Create install directory
+mkdir -p "$INSTALL_DIR"
 
-chmod +x "$HOME/bin/"* 2>/dev/null || true
+# Copy project files
+cp -r "$REPO_DIR/core" "$INSTALL_DIR/"
+cp -r "$REPO_DIR/bin" "$INSTALL_DIR/"
+cp "$REPO_DIR/requirements.txt" "$INSTALL_DIR/"
 
-python3 - <<'PY2'
-from pathlib import Path
-base = Path.home() / ".termorganism" / "memory"
-base.mkdir(parents=True, exist_ok=True)
-for name in ("commands.json", "repairs.json"):
-    p = base / name
-    if not p.exists() or not p.read_text(encoding="utf-8", errors="ignore").strip():
-        p.write_text("[]\n", encoding="utf-8")
-PY2
+# Add to PATH if not already there
+SHELL_RC=""
+if [ -f "$HOME/.bashrc" ]; then
+    SHELL_RC="$HOME/.bashrc"
+elif [ -f "$HOME/.zshrc" ]; then
+    SHELL_RC="$HOME/.zshrc"
+fi
 
-for line in \
-'export PATH="$HOME/bin:$PATH"' \
-'source ~/.zsh/organism_guard.zsh' \
-'source ~/.zsh/organism_brain.zsh' \
-'source ~/.zsh/context.zsh' \
-'source ~/.zsh/suggest.zsh' \
-"alias python='organism_exec_guard python3'" \
-"alias python3='organism_exec_guard python3'"
-do
-  grep -Fqx "$line" "$HOME/.zshrc" 2>/dev/null || echo "$line" >> "$HOME/.zshrc"
-done
+if [ -n "$SHELL_RC" ]; then
+    if ! grep -q "termorganism" "$SHELL_RC" 2>/dev/null; then
+        echo "export PATH=\"$INSTALL_DIR/bin:\$PATH\"" >> "$SHELL_RC"
+        echo "Added to PATH in $SHELL_RC"
+    fi
+fi
 
-echo "OK: TermOrganism installed"
-echo "Run: source ~/.zshrc"
+echo "Installed to $INSTALL_DIR"
+echo "Run 'source $SHELL_RC' or open a new terminal"

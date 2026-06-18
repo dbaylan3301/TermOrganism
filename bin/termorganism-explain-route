@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /root/TermOrganismGitFork
+cd "$(dirname "$0")/.."
 exec python3 -m core.tools.explain_route "$@"

@@ -76,7 +76,7 @@ def start_watch(args: argparse.Namespace) -> int:
     with log_path.open("ab") as logf:
         proc = subprocess.Popen(
             cmd,
-            cwd="/root/TermOrganismGitFork",
+            cwd=str(Path(__file__).resolve().parents[2]),
             stdout=logf,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,

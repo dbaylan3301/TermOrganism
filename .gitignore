@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.bak
+*.bak.*
+*.BAK.*
+*.backup
 .venv/
 .env
 .termorganism/
