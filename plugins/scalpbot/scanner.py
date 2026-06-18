@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from typing import List, Dict
+from rich.panel import Panel
+from rich import box
 from .config import ScalpConfig
 from .signals import evaluate_signal, SignalResult
 from .screener import MarketScreener
