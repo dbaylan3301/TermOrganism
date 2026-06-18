@@ -6,6 +6,10 @@ from typing import List, Dict
 from .config import ScalpConfig
 from .signals import evaluate_signal, SignalResult
 from .screener import MarketScreener
+from .display import (
+    console, display_banner, display_scanning_header,
+    display_screening_results, display_signal, display_status_bar
+)
 
 ALL_COINS = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK",
@@ -21,6 +25,8 @@ class CoinScanner:
         self.mock = mock
         self.screener = MarketScreener(config)
         self.kline_cache: Dict[str, pd.DataFrame] = {}
+        self.scan_count = 0
+        self.signal_count = 0
 
     def fetch_usdt_pairs(self) -> List[str]:
         return ALL_COINS[:self.config.top_pairs]
@@ -48,24 +54,30 @@ class CoinScanner:
 
     def scan_once(self) -> List[SignalResult]:
         """Smart scan: fetch data, screen, then evaluate top candidates."""
-        print(f"📊 [{time.strftime('%H:%M:%S')}] Piyasa taranıyor...")
+        start_time = time.time()
+        self.scan_count += 1
+
+        console.print()
+        console.print(f"[bold #00D4AA]━━━ TARAMA #{self.scan_count} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #00D4AA]")
+        console.print(f"[#6B7280]   {time.strftime('%H:%M:%S UTC')} • Veri çekiliyor...[/#6B7280]")
 
         # Step 1: Fetch all kline data
         self.kline_cache = self.fetch_all_klines()
-        print(f"   {len(self.kline_cache)} coin verisi çekildi")
+        console.print(f"[#10B981]   ✓ {len(self.kline_cache)} coin verisi çekildi[/#10B981]")
 
         # Step 2: Screen market
+        console.print(f"[#6B7280]   🔍 Piyasa analiz ediliyor...[/#6B7280]")
         screened = self.screener.screen_market(list(self.kline_cache.keys()), self.kline_cache)
 
         if not screened:
+            console.print("[#F97316]   ⚠ Uygun aday bulunamadı[/#F97316]")
             return []
 
-        # Show top candidates
-        print("   En iyi adaylar:")
-        for i, coin in enumerate(screened[:5], 1):
-            print(f"   {i}. {coin['symbol']}: Score={coin['score']} | {', '.join(coin['reasons'][:2])}")
+        # Display screening results
+        display_screening_results(screened)
 
         # Step 3: Evaluate only top candidates
+        console.print(f"[#6B7280]   📡 Sinyal değerlendiriliyor...[/#6B7280]")
         signals = []
         for coin in screened[:5]:
             symbol = coin["symbol"]
@@ -73,28 +85,45 @@ class CoinScanner:
                 result = evaluate_signal(self.kline_cache[symbol], self.config, symbol=symbol)
                 if result.signal != "NONE":
                     signals.append(result)
+                    self.signal_count += 1
+
+        scan_time = time.time() - start_time
+        display_status_bar(self.signal_count, scan_time)
 
         return signals
 
     def run(self):
         self.running = True
-        print("🔍 5x Scalp Bot başlatılıyor...")
-        print("   Mod: Akıllı Filtreleme (Likidite + RSI + ATR + Volume)")
-        print(f"   Taranan coin: {len(ALL_COINS)}")
-        print(f"   Tarama aralığı: {self.config.scan_interval_sec}s")
-        print("   Çıkmak için: Ctrl+C\n")
+        display_banner()
+
+        console.print()
+        console.print(Panel(
+            f"[bold #00D4AA]⚡ MOD: AKILLI FİLTRELEME[/bold #00D4AA]\n"
+            f"[#6B7280]   Likidite • RSI • ATR • Volume Spike Analizi[/#6B7280]\n"
+            f"[#6B7280]   Veri: Yahoo Finance Canlı 1 Dakika[/#6B7280]\n"
+            f"[#6B7280]   Taranan Coin: {len(ALL_COINS)} • Aralık: {self.config.scan_interval_sec}s[/#6B7280]",
+            border_style="#334155",
+            box=box.ROUNDED,
+            padding=(0, 2)
+        ))
+
+        console.print()
+        console.print("[#F59E0B]   ⏹ Çıkmak için: Ctrl+C[/#F59E0B]")
+        console.print()
 
         try:
             while self.running:
                 signals = self.scan_once()
                 if signals:
                     for sig in signals:
-                        from .display import display_signal
                         display_signal(sig)
-                        print()
-                else:
-                    print(f"   Sinyal yok, {self.config.scan_interval_sec}s bekleniyor...\n")
                 time.sleep(self.config.scan_interval_sec)
         except KeyboardInterrupt:
-            print("\n\nTarama durduruldu.")
+            console.print()
+            console.print(Panel(
+                f"[bold #EF4444]🛑 TARAMA DURDURULDU[/bold #EF4444]\n"
+                f"[#6B7280]   Toplam Tarama: {self.scan_count} • Toplam Sinyal: {self.signal_count}[/#6B7280]",
+                border_style="#EF4444",
+                box=box.ROUNDED
+            ))
             self.running = False

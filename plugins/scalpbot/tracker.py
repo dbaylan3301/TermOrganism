@@ -1,10 +1,12 @@
 import time
-import requests
+import yfinance as yf
 from datetime import datetime, timedelta
 from typing import Optional
 from .config import ScalpConfig
 from .risk import calculate_pnl, check_exit
-from .display import display_position, display_exit_summary, format_price
+from .display import display_position, display_exit_summary, format_price, console
+from rich.panel import Panel
+from rich import box
 
 class PositionTracker:
     def __init__(self, config: ScalpConfig):
@@ -22,20 +24,30 @@ class PositionTracker:
             "leverage": leverage,
             "start_time": datetime.now(),
         }
-        print(f"\n📊 Pozisyon takibi başlatıldı: {direction} {symbol}")
-        print(f"   Giriş: {format_price(entry_price)}")
-        print(f"   SL: {format_price(sl_price)} | TP: {format_price(tp_price)}")
-        print("   Çıkmak için: Ctrl+C\n")
+
+        console.print()
+        console.print(Panel(
+            f"[bold #00D4AA]⚡ POZİYON TAKİBİ BAŞLATILDI[/bold #00D4AA]\n\n"
+            f"[bold #F8FAFC]   {direction} {symbol} {leverage}x[/bold #F8FAFC]\n\n"
+            f"[#6B7280]   Giriş:  [#F8FAFC]{format_price(entry_price)}[/#F8FAFC]\n"
+            f"[#6B7280]   SL:     [#EF4444]{format_price(sl_price)}[/#EF4444]\n"
+            f"[#6B7280]   TP:     [#10B981]{format_price(tp_price)}[/#10B981]\n\n"
+            f"[#F59E0B]   ⏹ Çıkmak için: Ctrl+C[/#F59E0B]",
+            border_style="#00D4AA",
+            box=box.ROUNDED,
+            padding=(0, 2)
+        ))
+        console.print()
 
     def get_current_price(self, symbol: str) -> Optional[float]:
         try:
-            url = f"https://fapi.binance.com/fapi/v1/ticker/price"
-            params = {"symbol": symbol}
-            resp = requests.get(url, params=params, timeout=5)
-            resp.raise_for_status()
-            return float(resp.json()["price"])
+            ticker = yf.Ticker(f"{symbol}-USD")
+            data = ticker.history(period="1d", interval="1m")
+            if not data.empty:
+                return float(data["Close"].iloc[-1])
+            return None
         except Exception as e:
-            print(f"⚠️ Fiyat alınamadı: {e}")
+            console.print(f"[#F97316]   ⚠ Fiyat alınamadı: {e}[/#F97316]")
             return None
 
     def format_duration(self, seconds: float) -> str:
@@ -48,11 +60,12 @@ class PositionTracker:
 
     def run(self):
         if not self.active_position:
-            print("Aktif pozisyon yok")
+            console.print("[#EF4444]   Aktif pozisyon yok[/#EF4444]")
             return
 
         pos = self.active_position
-        print("Canlı takip başlatıldı... (Ctrl+C ile çık)")
+        console.print("[#6B7280]   📡 Canlı takip başlatıldı...[/#6B7280]")
+        console.print()
 
         try:
             while True:
@@ -101,7 +114,12 @@ class PositionTracker:
                 time.sleep(self.config.price_refresh_sec)
 
         except KeyboardInterrupt:
-            print("\n\nTakip durduruldu.")
+            console.print()
+            console.print(Panel(
+                f"[bold #EF4444]🛑 TAKİP DURDURULDU[/bold #EF4444]",
+                border_style="#EF4444",
+                box=box.ROUNDED
+            ))
             if self.active_position:
                 current_price = self.get_current_price(pos["symbol"])
                 if current_price:
@@ -109,4 +127,4 @@ class PositionTracker:
                         pos["entry"], current_price,
                         pos["direction"], pos["leverage"]
                     )
-                    print(f"Mevcut P&L: {pnl:+.2f}%")
+                    console.print(f"[#6B7280]   Mevcut P&L: {pnl:+.2f}%[/#6B7280]")
