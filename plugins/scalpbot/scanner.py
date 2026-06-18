@@ -37,6 +37,9 @@ class CoinScanner:
         self.mtf_cache: Dict[str, Dict[str, pd.DataFrame]] = {}
         self.scan_count = 0
         self.signal_count = 0
+        self.last_signal = None
+        self.last_signal_time = 0
+        self.signal_history = []
 
     def fetch_usdt_pairs(self) -> List[str]:
         return ALL_COINS[:self.config.top_pairs]
@@ -76,6 +79,33 @@ class CoinScanner:
                 mtf_data[tf_name] = df
         return mtf_data
 
+    def check_signal_confirmation(self, new_signal) -> bool:
+        """Check if signal should be confirmed (prevent rapid switching)."""
+        if self.last_signal is None:
+            return True
+
+        time_since_last = time.time() - self.last_signal_time
+
+        # Same coin, same direction - always confirm
+        if (new_signal.symbol == self.last_signal.symbol and
+            new_signal.direction == self.last_signal.direction):
+            return True
+
+        # Different direction - require minimum cooldown
+        COOLDOWN_SECONDS = 180  # 3 dakika bekle
+        if time_since_last < COOLDOWN_SECONDS:
+            remaining = int(COOLDOWN_SECONDS - time_since_last)
+            console.print(f"[#F97316]   ⏳ Yön değişimi bekleniyor ({remaining}s kaldı)[/#F97316]")
+            return False
+
+        # Different coin - check confidence difference
+        if new_signal.symbol != self.last_signal.symbol:
+            CONFIDENCE_DIFF = 15  # Farklı coin için %15 daha güvenilir olmalı
+            if new_signal.confidence < self.last_signal.confidence + CONFIDENCE_DIFF:
+                return False
+
+        return True
+
     def scan_once(self) -> List[SignalResult]:
         start_time = time.time()
         self.scan_count += 1
@@ -109,7 +139,24 @@ class CoinScanner:
         # Return only the best signal (highest confidence)
         if signals:
             signals.sort(key=lambda x: x.confidence, reverse=True)
-            signals = [signals[0]]  # Only best one
+            best_signal = signals[0]
+
+            # Check signal confirmation
+            if self.check_signal_confirmation(best_signal):
+                self.last_signal = best_signal
+                self.last_signal_time = time.time()
+                self.signal_history.append({
+                    "time": time.time(),
+                    "symbol": best_signal.symbol,
+                    "direction": best_signal.signal,
+                    "confidence": best_signal.confidence
+                })
+                signals = [best_signal]
+            else:
+                console.print("[#F97316]   ⚠ Sinyal onaylanmadı - önceki sinyal bekleniyor[/#F97316]")
+                signals = []
+        else:
+            signals = []
 
         scan_time = time.time() - start_time
         display_status_bar(self.signal_count, scan_time)
