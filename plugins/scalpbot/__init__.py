@@ -1,0 +1,1 @@
+"""5x Scalp Bot - Crypto futures signal generator and position tracker."""
