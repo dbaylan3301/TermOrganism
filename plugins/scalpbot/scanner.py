@@ -9,8 +9,8 @@ from .signals import evaluate_signal, SignalResult
 TOP_COINS = [
     "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD",
     "DOGE-USD", "ADA-USD", "AVAX-USD", "DOT-USD", "LINK-USD",
-    "MATIC-USD", "UNI-USD", "LTC-USD", "ATOM-USD", "NEAR-USD",
-    "APT-USD", "ARB-USD", "OP-USD", "SUI-USD", "PEPE-USD"
+    "LTC-USD", "ATOM-USD", "NEAR-USD", "FIL-USD", "ETC-USD",
+    "BCH-USD", "ALGO-USD", "XLM-USD", "VET-USD", "HBAR-USD"
 ]
 
 class CoinScanner:
