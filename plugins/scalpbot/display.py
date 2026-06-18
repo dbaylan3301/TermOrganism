@@ -183,17 +183,15 @@ def display_signal(result: SignalResult):
         display_name = ind_names.get(name, name)
         ind_lines.append(f"  [:#6B7280]{display_name}[/:#6B7280]: {val:.4f}")
 
-    content = Text.assemble(
-        info_table,
-        "\n",
-        "[bold #7C3AED]━━━ Koşullar & Ağırlıklar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]\n",
-        "\n".join(cond_lines),
-        "\n",
-        "[bold #7C3AED]━━━ İndikatörler ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]\n",
-        "\n".join(ind_lines),
-        "\n",
-        f"\n[bold #F59E0B]📌 Komut:[/bold #F59E0B] [:#F8FAFC]python -m plugins.scalpbot track --symbol {result.symbol} --direction {result.signal} --entry {format_price(result.entry_price)} --sl {format_price(result.sl_price)} --tp {format_price(result.tp_price)}[/:#F8FAFC]"
-    )
+    content = f"""{info_table}
+
+[bold #7C3AED]━━━ Koşullar & Ağırlıklar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]
+{chr(10).join(cond_lines)}
+
+[bold #7C3AED]━━━ İndikatörler ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]
+{chr(10).join(ind_lines)}
+
+[bold #F59E0B]📌 Komut:[/bold #F59E0B] python -m plugins.scalpbot track --symbol {result.symbol} --direction {result.signal} --entry {format_price(result.entry_price)} --sl {format_price(result.sl_price)} --tp {format_price(result.tp_price)}"""
 
     panel = Panel(
         Align.left(content),
