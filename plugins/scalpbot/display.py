@@ -167,7 +167,7 @@ def display_signal(result: SignalResult):
         icon = "[#10B981]✓[/#10B981]" if met else "[#EF4444]✗[/#EF4444]"
         cond_name, weight = weight_map.get(cond, (cond, 0))
         score = result.condition_scores.get(cond, 0)
-        cond_lines.append(f"  {icon} {cond_name} [:#6B7280]({weight} puan)[/:#6B7280] → [{conf_color}]{score}[/{conf_color}]")
+        cond_lines.append(f"  {icon} {cond_name} [dim]({weight} puan)[/dim] → [{conf_color}]{score}[/{conf_color}]")
 
     # Indicators
     ind_lines = []
@@ -181,7 +181,7 @@ def display_signal(result: SignalResult):
     }
     for name, val in result.indicators.items():
         display_name = ind_names.get(name, name)
-        ind_lines.append(f"  [:#6B7280]{display_name}[/:#6B7280]: {val:.4f}")
+        ind_lines.append(f"  [dim]{display_name}[/dim]: {val:.4f}")
 
     content = f"""{info_table}
 
