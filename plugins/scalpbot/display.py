@@ -10,18 +10,16 @@ import time
 
 console = Console()
 
-# MiMoCode Color Theme
 COLORS = {
-    "primary": "#00D4AA",      # Teal/Cyan
-    "secondary": "#7C3AED",    # Purple
-    "accent": "#F59E0B",       # Amber
-    "success": "#10B981",      # Green
-    "danger": "#EF4444",       # Red
-    "warning": "#F97316",      # Orange
-    "muted": "#6B7280",        # Gray
-    "bg": "#1E293B",           # Dark Blue
-    "text": "#F8FAFC",         # Light
-    "border": "#334155",       # Border Gray
+    "primary": "#00D4AA",
+    "secondary": "#7C3AED",
+    "accent": "#F59E0B",
+    "success": "#10B981",
+    "danger": "#EF4444",
+    "warning": "#F97316",
+    "muted": "#6B7280",
+    "text": "#F8FAFC",
+    "border": "#334155",
 }
 
 def format_price(price: float) -> str:
@@ -42,8 +40,23 @@ def get_pnl_color(pnl: float) -> str:
     else:
         return "#EF4444"
 
+def get_confidence_color(confidence: float) -> str:
+    if confidence >= 85:
+        return "#10B981"
+    elif confidence >= 70:
+        return "#34D399"
+    elif confidence >= 50:
+        return "#F59E0B"
+    else:
+        return "#EF4444"
+
+def get_confidence_bar(confidence: float) -> str:
+    bar_length = 20
+    filled = int(confidence / 100 * bar_length)
+    color = get_confidence_color(confidence)
+    return f"[{color}]{'█' * filled}{'░' * (bar_length - filled)}[/{color}]"
+
 def display_banner():
-    """Display MiMoCode styled banner."""
     banner = """
 [bold #00D4AA]╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
@@ -60,7 +73,6 @@ def display_banner():
     console.print(Align.center(banner))
 
 def display_scanning_header():
-    """Display scanning status header."""
     console.print()
     console.print(Panel(
         f"[bold #00D4AA]⚡ TARAMA BAŞLATILDI[/bold #00D4AA]\n"
@@ -72,7 +84,6 @@ def display_scanning_header():
     ))
 
 def display_screening_results(screened: list):
-    """Display screening results in MiMoCode style."""
     if not screened:
         return
 
@@ -110,23 +121,21 @@ def display_screening_results(screened: list):
     console.print(table)
 
 def display_signal(result: SignalResult):
-    """Display signal in MiMoCode professional style."""
     if result.signal == "NONE":
         return
 
     is_long = result.signal == "LONG"
     color = "#10B981" if is_long else "#EF4444"
     emoji = "▲" if is_long else "▼"
-    direction_text = "LONG" if is_long else "SHORT"
+    conf_color = get_confidence_color(result.confidence)
 
-    # Header with ASCII art
     header = f"""
 [bold {color}]┌─────────────────────────────────────────────────────────────┐
 │  {emoji} {result.signal} SİNYAL • {result.symbol}                              │
+│  Güvenilirlik: [{conf_color}]{result.confidence:.0f}% {result.confidence_level}[/{conf_color}]                          │
 │  [{time.strftime('%Y-%m-%d %H:%M:%S UTC')}]                               │
 └─────────────────────────────────────────────────────────────┘[/bold {color}]"""
 
-    # Main info table
     info_table = Table(show_header=False, box=None, padding=(0, 2))
     info_table.add_column("Key", style="#6B7280", width=14)
     info_table.add_column("Value", style="bold #F8FAFC")
@@ -137,32 +146,53 @@ def display_signal(result: SignalResult):
     info_table.add_row("Kaldıraç", f"[#F59E0B]{result.leverage}x[/#F59E0B]")
     info_table.add_row("Risk/Kazanç", f"[bold #7C3AED]1:{result.risk_reward:.2f}[/bold #7C3AED]")
 
-    # Risk calculation
     risk_pct = abs(result.entry_price - result.sl_price) / result.entry_price * 100 * result.leverage
     reward_pct = abs(result.tp_price - result.entry_price) / result.entry_price * 100 * result.leverage
     info_table.add_row("Potansiyel K/Z", f"[#10B981]+{reward_pct:.1f}%[/#10B981] / [#EF4444]-{risk_pct:.1f}%[/#EF4444]")
 
-    # Conditions
+    # Confidence bar
+    conf_bar = get_confidence_bar(result.confidence)
+    info_table.add_row("Güvenilirlik", f"{conf_bar} [{conf_color}]{result.confidence:.0f}%[/{conf_color}]")
+
+    # Conditions with weights
     cond_lines = []
+    weight_map = {
+        "ema_crossover": ("EMA Cross", 30),
+        "rsi_ok": ("RSI Onay", 20),
+        "atr_ok": ("ATR Volatilite", 15),
+        "volume_spike": ("Volume Spike", 25),
+        "trigger_ok": ("Trigger Momentum", 10),
+    }
     for cond, met in result.conditions.items():
         icon = "[#10B981]✓[/#10B981]" if met else "[#EF4444]✗[/#EF4444]"
-        cond_lines.append(f"  {icon} {cond}")
+        cond_name, weight = weight_map.get(cond, (cond, 0))
+        score = result.condition_scores.get(cond, 0)
+        cond_lines.append(f"  {icon} {cond_name} [:#6B7280]({weight} puan)[/:#6B7280] → [{conf_color}]{score}[/{conf_color}]")
 
     # Indicators
     ind_lines = []
+    ind_names = {
+        "ema_fast": "EMA Hızlı",
+        "ema_slow": "EMA Yavaş",
+        "rsi": "RSI",
+        "atr": "ATR",
+        "atr_pct": "ATR%",
+        "vol_ratio": "Volume Oranı",
+    }
     for name, val in result.indicators.items():
-        ind_lines.append(f"  [:#6B7280]{name}[/:#6B7280]: {val:.4f}")
+        display_name = ind_names.get(name, name)
+        ind_lines.append(f"  [:#6B7280]{display_name}[/:#6B7280]: {val:.4f}")
 
     content = Text.assemble(
         info_table,
         "\n",
-        "[bold #7C3AED]━━━ Koşullar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]\n",
+        "[bold #7C3AED]━━━ Koşullar & Ağırlıklar ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]\n",
         "\n".join(cond_lines),
         "\n",
         "[bold #7C3AED]━━━ İndikatörler ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/bold #7C3AED]\n",
         "\n".join(ind_lines),
         "\n",
-        f"\n[bold #F59E0B]📌 Komut:[/bold #F59E0B] [:#F8FAFC]pozisyon_al {result.symbol} {result.signal} {format_price(result.entry_price)}[/:#F8FAFC]"
+        f"\n[bold #F59E0B]📌 Komut:[/bold #F59E0B] [:#F8FAFC]python -m plugins.scalpbot track --symbol {result.symbol} --direction {result.signal} --entry {format_price(result.entry_price)} --sl {format_price(result.sl_price)} --tp {format_price(result.tp_price)}[/:#F8FAFC]"
     )
 
     panel = Panel(
@@ -179,12 +209,10 @@ def display_signal(result: SignalResult):
 def display_position(symbol: str, direction: str, entry: float,
                      current: float, sl: float, tp: float,
                      leverage: int, duration: str, pnl_pct: float):
-    """Display live position tracking in MiMoCode style."""
     color = get_pnl_color(pnl_pct)
     pnl_sign = "+" if pnl_pct >= 0 else ""
     is_profit = pnl_pct >= 0
 
-    # Progress bar
     total_range = abs(tp - sl) if direction == "LONG" else abs(sl - tp)
     if direction == "LONG":
         current_pos = (current - sl) / total_range * 100
@@ -217,7 +245,6 @@ def display_position(symbol: str, direction: str, entry: float,
 
 def display_exit_summary(symbol: str, direction: str, entry: float,
                         exit_price: float, pnl_pct: float, exit_type: str):
-    """Display exit summary in MiMoCode style."""
     is_profit = pnl_pct >= 0
     color = "#10B981" if is_profit else "#EF4444"
     emoji = "✓" if is_profit else "✗"
@@ -250,7 +277,6 @@ def display_exit_summary(symbol: str, direction: str, entry: float,
     console.print(panel)
 
 def display_status_bar(signal_count: int, scan_time: float):
-    """Display status bar at bottom."""
     console.print()
     console.print(Panel(
         f"[#6B7280]⚡ Tarama: {scan_time:.1f}s • "
