@@ -85,15 +85,19 @@ def evaluate_signal(df: pd.DataFrame, config: ScalpConfig,
     current_price = closes[-1]
     prev_close = closes[-2]
 
+    # Check EMA proximity (potential crossover)
+    ema_diff_pct = abs(ema_fast[-1] - ema_slow[-1]) / ema_slow[-1] * 100 if ema_slow[-1] != 0 else 999
+    ema_proximity = ema_diff_pct < 0.1  # EMA'lar çok yakın
+
     # LONG conditions with scoring
-    long_ema = check_crossover(ema_fast, ema_slow, "bullish")
+    long_ema = check_crossover(ema_fast, ema_slow, "bullish") or (ema_proximity and ema_fast[-1] > ema_slow[-1])
     long_rsi = rsi[-1] < config.rsi_long_max if not np.isnan(rsi[-1]) else False
     long_atr = result.indicators["atr_pct"] > config.atr_min_pct
     long_vol = is_vol_spike
     long_trigger = current_price > prev_close * (1 + config.trigger_bps / 10000)
 
     # SHORT conditions with scoring
-    short_ema = check_crossover(ema_fast, ema_slow, "bearish")
+    short_ema = check_crossover(ema_fast, ema_slow, "bearish") or (ema_proximity and ema_fast[-1] < ema_slow[-1])
     short_rsi = rsi[-1] > config.rsi_short_min if not np.isnan(rsi[-1]) else False
     short_atr = long_atr
     short_vol = long_vol

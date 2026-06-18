@@ -13,7 +13,7 @@ class ScalpConfig:
 
     # ATR
     atr_period: int = 7
-    atr_min_pct: float = 0.18
+    atr_min_pct: float = 0.10  # Düşürüldü: 0.18 → 0.10
 
     # Volume
     volume_lookback: int = 14
