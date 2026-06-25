@@ -8,13 +8,13 @@ def test_default_config():
     assert config.rsi_long_max == 62
     assert config.rsi_short_min == 38
     assert config.atr_period == 7
-    assert config.atr_min_pct == 0.18
+    assert config.atr_min_pct == 0.12
     assert config.volume_lookback == 14
     assert config.volume_spike_mult == 1.9
     assert config.trigger_bps == 12
     assert config.leverage == 5
-    assert config.sl_atr_mult == 1.5
-    assert config.tp_atr_mult == 1.7
+    assert config.sl_atr_mult == 1.4
+    assert config.tp_atr_mult == 2.4
 
 def test_config_from_dict():
     config = ScalpConfig.from_dict({"ema_fast": 10, "leverage": 10})

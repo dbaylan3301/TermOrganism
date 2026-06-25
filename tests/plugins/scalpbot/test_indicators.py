@@ -28,12 +28,17 @@ def test_calc_atr():
     assert atr[-1] > 0
 
 def test_calc_atr_pct():
-    highs = np.array([105.0, 106.0, 107.0])
-    lows = np.array([100.0, 101.0, 102.0])
-    closes = np.array([103.0, 104.0, 105.0])
+    n = 20
+    highs = np.linspace(100, 110, n) + np.random.default_rng(42).normal(0, 0.5, n)
+    lows = highs - 3.0
+    closes = highs - 1.5
     atr = calc_atr(highs, lows, closes, period=2)
+    valid = atr[~np.isnan(atr)]
+    assert len(valid) > 0
     atr_pct = (atr / closes) * 100
-    assert atr_pct[-1] > 0
+    valid_pct = atr_pct[~np.isnan(atr_pct)]
+    assert len(valid_pct) > 0
+    assert valid_pct[-1] > 0
 
 def test_calc_volume_spike():
     volumes = np.array([100, 120, 110, 130, 105,

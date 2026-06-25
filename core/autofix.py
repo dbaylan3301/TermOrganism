@@ -17,8 +17,16 @@ from core.repair import (
     EventStoreAdapter,
 )
 
+run_autofix = repair
+
+
+def finalize_repair_payload(result: dict, *, fast: bool = False) -> dict:
+    return result
+
+
 __all__ = [
     "repair",
+    "run_autofix",
     "build_candidates",
     "build_and_rank_plans",
     "verify_repair",

@@ -144,6 +144,9 @@ class MemoryEngine:
         if not local_only and record.success_verified and float(record.confidence or 0.0) > 0.9:
             self._sync_to_global(record)
 
+    def find_similar(self, failure_signature: str, limit: int = 5):
+        return self.find_similar_repairs(failure_signature, limit=limit)
+
     def find_similar_repairs(
         self,
         failure_signature: str,
