@@ -6,11 +6,18 @@ from core.verify.sandbox import run_in_sandbox
 from core.verify.contract_synth import synthesize_and_check_contract
 
 
-def verify_plan(
+def verify_repair(
     plan: dict[str, Any],
     file_path: str | None = None,
     error_text: str = "",
 ) -> dict[str, Any]:
+    if not file_path:
+        return {"ok": False, "reason": "no file to verify"}
+
+    edits = plan.get("edits") or []
+    if not edits:
+        return {"ok": False, "reason": "no edits in plan"}
+
     sandbox_result: dict[str, Any] = {}
     try:
         ctx = type("Ctx", (), {})()

@@ -22,7 +22,7 @@ def build_and_rank_plans(
     thought_bus: Any = None,
     *,
     execute_plan_fn: Any = None,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     base_plans = build_repair_plans(
         error_text=error_text,
         semantic=semantic,
@@ -99,14 +99,4 @@ def build_and_rank_plans(
             kind="fail",
         )
 
-    best_plan = ranked[0] if ranked else None
-
-    return {
-        "repair_plans": ranked,
-        "best_plan": best_plan,
-        "base_plan_count": len(base_plans),
-        "multifile_plan_count": len(multifile_plans),
-        "branch_result": (best_plan or {}).get("branch_result"),
-        "contract_result": (best_plan or {}).get("contract_result"),
-        "contract_propagation": (best_plan or {}).get("contract_propagation"),
-    }
+    return ranked
