@@ -73,6 +73,15 @@ llm:
 
 ---
 
+## What's New in v2
+
+- **Modular Architecture**: `core/autofix.py` split into focused modules under `core/repair/`
+- **Plugin API**: Extend TermOrganism with custom experts and tools
+- **CI/CD**: Automated linting, testing, and type checking via GitHub Actions
+- **Expanded Tests**: 70+ unit tests covering all major components
+
+---
+
 ## Features
 
 ### AI Assistant (`termorg`)
