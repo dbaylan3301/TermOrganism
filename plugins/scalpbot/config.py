@@ -30,9 +30,9 @@ class ScalpConfig:
     min_risk_reward: float = 1.65  # Minimum R/R oranı
 
     # Signal requirements
-    min_conditions: int = 3
-    min_confidence: float = 60.0
-    min_score: int = 75  # Minimum sinyal skoru
+    min_conditions: int = 5  # TÜM koşullar sağlanmalı (EMA+RSI+ATR+Volume+Trigger)
+    min_confidence: float = 80.0  # Minimum %80 güvenilirlik
+    min_score: int = 85  # Minimum sinyal skoru
 
     # Scanner
     kline_interval: str = "1m"

@@ -59,7 +59,7 @@ class CoinScanner:
             if df["volume"].sum() == 0:
                 df["volume"] = np.random.uniform(100000, 5000000, len(df))
             return df
-        except:
+        except Exception:
             return pd.DataFrame()
 
     def fetch_all_klines(self) -> Dict[str, pd.DataFrame]:
