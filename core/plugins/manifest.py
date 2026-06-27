@@ -10,6 +10,7 @@ class PluginManifest:
     name: str
     version: str
     description: str = ""
+    entry_point: str = ""
     skills: list[str] = field(default_factory=list)
     agents: list[str] = field(default_factory=list)
     hooks: list[str] = field(default_factory=list)
@@ -23,4 +24,5 @@ class PluginManifest:
         data = json.loads(p.read_text(encoding="utf-8"))
         data.setdefault("root_dir", str(p.parent))
         data.setdefault("hook_commands", {})
+        data.setdefault("entry_point", "")
         return cls(**data)

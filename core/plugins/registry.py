@@ -14,6 +14,8 @@ class PluginRegistry:
         self._tools: list[Tool] = []
 
     def register(self, plugin: Plugin) -> None:
+        if not isinstance(plugin, Plugin):
+            raise TypeError(f"Expected Plugin instance, got {type(plugin).__name__}")
         self._plugins[plugin.name] = plugin
         self._experts.extend(plugin.register_experts())
         self._tools.extend(plugin.register_tools())

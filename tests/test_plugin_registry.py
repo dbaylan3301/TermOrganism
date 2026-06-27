@@ -1,4 +1,5 @@
 from __future__ import annotations
+import pytest
 from core.plugins.base import Plugin
 from core.plugins.registry import PluginRegistry
 
@@ -22,3 +23,8 @@ def test_plugin_registry_notify_does_not_raise():
     registry.register(DummyPlugin())
     registry.notify_repair_start({"error": "test"})
     registry.notify_repair_complete({"ok": True})
+
+def test_plugin_registry_rejects_non_plugin():
+    registry = PluginRegistry()
+    with pytest.raises(TypeError, match="Expected Plugin instance"):
+        registry.register("not a plugin")

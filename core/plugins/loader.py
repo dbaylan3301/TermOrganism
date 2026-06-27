@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from core.plugins.manifest import PluginManifest
 from core.plugins.registry import PluginRegistry
@@ -19,5 +20,10 @@ class PluginLoader:
 
     def load_into(self, registry: PluginRegistry) -> PluginRegistry:
         for manifest in self.discover():
-            registry.register(manifest)
+            if not manifest.entry_point:
+                continue
+            module_path, class_name = manifest.entry_point.rsplit(":", 1)
+            mod = importlib.import_module(module_path)
+            plugin_cls = getattr(mod, class_name)
+            registry.register(plugin_cls())
         return registry
