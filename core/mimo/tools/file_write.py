@@ -30,7 +30,10 @@ class FileWriteTool(Tool):
         }
 
     async def execute(self, file_path: str = "", content: str = "", **kwargs: Any) -> str:
-        path = Path(file_path)
+        path = Path(file_path).resolve()
+        cwd = Path.cwd().resolve()
+        if cwd not in path.parents and path != cwd:
+            return f"Error: path {file_path} is outside the allowed working directory ({cwd})."
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")

@@ -36,6 +36,9 @@ class BashTool(Tool):
 
     async def execute(self, command: str = "", workdir: str | None = None,
                       timeout: int = 120, **kwargs: Any) -> str:
+        stripped = command.strip()
+        if stripped == "cd" or stripped.startswith("cd ") or stripped.startswith("cd\t"):
+            return "Error: 'cd' commands are not allowed in sandboxed mode."
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
