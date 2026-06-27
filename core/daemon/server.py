@@ -655,21 +655,275 @@ class TermOrganismDaemon:
             context,
         )
 
+    def _parse_request(self, data: bytes) -> tuple[Path, str, dict, dict]:
+        request = json.loads(data.decode("utf-8"))
+        raw_file = request.get("file_path") or request.get("file")
+        if not raw_file:
+            raise ValueError("missing file_path/file")
+        file_path = Path(raw_file)
+        context = request.get("context") or {}
+        mode = str(request.get("mode") or "auto")
+        context = self._ensure_synaptic_context(file_path, context)
+        return file_path, mode, context, request
+
+    def _build_routing_context(
+        self,
+        file_path: Path,
+        context: dict[str, Any],
+        request: dict,
+        agent_results: list[dict[str, Any]],
+        mode: str,
+    ) -> tuple[str, dict, list, dict]:
+        planner = next((x.get("output", {}) for x in agent_results if x.get("agent") == "planner"), {})
+
+        effective_mode = mode
+        if mode == "auto":
+            effective_mode = str(planner.get("suggested_mode") or "fast")
+
+        routing_meta = {
+            "requested_mode": mode,
+            "effective_mode": effective_mode,
+            "planner_suggested_mode": str(planner.get("suggested_mode") or effective_mode),
+            "planner_reason": planner.get("reason", ""),
+        }
+
+        effective_mode, routing_meta = self._effective_mode_from_agents(mode, agent_results)
+        intent_ctx = infer_intent_context(detect_context(str(file_path.resolve().parent)))
+        intent_focus = str(intent_ctx.get("focus", "general_runtime"))
+        intent_preload_routes = list(intent_ctx.get("preload_routes", []))
+        intent_confidence = float(intent_ctx.get("confidence", 0.0) or 0.0)
+
+        routing_meta["intent_focus"] = intent_focus
+        routing_meta["intent_preload_routes"] = intent_preload_routes[:4]
+        routing_meta["intent_confidence"] = intent_confidence
+
+        intent_reason_parts = []
+
+        if effective_mode == "hot_force" and (
+            "verify_first" in intent_preload_routes or "safe_preview" in intent_preload_routes
+        ):
+            fallback_mode = str(planner.get("suggested_mode") or "fast_v2")
+            if fallback_mode == "hot_force":
+                fallback_mode = "fast_v2"
+            effective_mode = fallback_mode
+            routing_meta["effective_mode"] = effective_mode
+            intent_reason_parts.append("intent-aware context avoided hot_force")
+
+        elif effective_mode == "fast" and "verify_first" in intent_preload_routes:
+            effective_mode = "fast_v2"
+            routing_meta["effective_mode"] = effective_mode
+            intent_reason_parts.append("intent-aware context promoted fast_v2")
+
+        routing_meta["intent_reason"] = " | ".join(intent_reason_parts)
+
+        live_predictive = analyze_file(
+            str(file_path),
+            cwd=str(file_path.resolve().parent),
+        )
+        static_whispers = list((live_predictive or {}).get("warnings") or [])
+        runtime_whispers = derive_runtime_whispers(
+            signature=str(planner.get("signature") or request.get("signature") or context.get("signature") or "-"),
+            error_text=str(context.get("error_text") or ""),
+        )
+        predictive_whispers = merge_whispers(static_whispers, runtime_whispers)
+
+        bridge_bias = infer_bridge_route_bias(
+            target_path=str(file_path),
+            repo_root=str(file_path.resolve().parent),
+            focus=str(planner.get("repo_type") or "general_runtime"),
+            signature=str(planner.get("signature") or request.get("signature") or "-"),
+        )
+        bridge_apply = apply_bridge_bias_to_mode(
+            requested_mode=(routing_meta.get("planner_suggested_mode") or effective_mode or mode),
+            bridge_bias=bridge_bias,
+        )
+        if bridge_apply.get("effective_mode"):
+            effective_mode = bridge_apply["effective_mode"]
+            routing_meta["effective_mode"] = effective_mode
+        routing_meta["bridge_reason"] = bridge_apply.get("reason", "")
+        routing_meta["bridge_recommended_route"] = bridge_apply.get("recommended_route")
+        routing_meta["bridge_score"] = bridge_apply.get("score", 0.0)
+
+        whisper_apply = apply_live_whisper_bias(
+            requested_mode=effective_mode,
+            whispers=predictive_whispers,
+        )
+        if whisper_apply.get("effective_mode"):
+            effective_mode = whisper_apply["effective_mode"]
+            routing_meta["effective_mode"] = effective_mode
+        routing_meta["whisper_kind"] = whisper_apply.get("kind")
+        routing_meta["whisper_priority"] = whisper_apply.get("priority", 0.0)
+        routing_meta["whisper_message"] = whisper_apply.get("message", "")
+        routing_meta["whisper_reason"] = whisper_apply.get("reason", "")
+        routing_meta["whisper_verify_emphasis"] = whisper_apply.get("verify_emphasis", False)
+
+        routing_meta["planner_reason"] = enrich_planner_reason(
+            routing_meta.get("planner_reason", ""),
+            intent_reason=routing_meta.get("intent_reason", ""),
+            bridge_reason=routing_meta.get("bridge_reason", ""),
+            whisper_reason=routing_meta.get("whisper_reason", ""),
+        )
+
+        route_candidates = build_route_candidates(
+            planner=planner,
+            current_effective_mode=str(effective_mode),
+            bridge_apply=bridge_apply,
+            whisper_apply=whisper_apply,
+            intent_ctx=intent_ctx,
+        )
+        ollama_bias = apply_ollama_route_bias(
+            route_candidates,
+            task_kind="route_decision",
+            context={
+                "signature": str(request.get("signature") or context.get("signature") or ""),
+                "planner_suggested_mode": str(planner.get("suggested_mode") or effective_mode),
+                "intent_focus": str(intent_ctx.get("focus") or "general_runtime"),
+                "intent_preload_routes": list(intent_ctx.get("preload_routes") or []),
+                "bridge_recommended_route": str(bridge_apply.get("recommended_route") or ""),
+                "bridge_score": float(bridge_apply.get("score", 0.0) or 0.0),
+                "whisper_kind": str(whisper_apply.get("kind") or ""),
+                "whisper_priority": float(whisper_apply.get("priority", 0.0) or 0.0),
+            },
+            complexity=0.8 if str(planner.get("suggested_mode") or "") in {"hot_force", "fast"} else 0.6,
+        )
+        route_candidates = list(ollama_bias.get("candidates") or route_candidates)
+        ollama_thought = dict(ollama_bias.get("thought") or {})
+        ollama_meta = dict(ollama_thought.get("_ollama") or {})
+        routing_meta["ollama_policy"] = ollama_meta.get("policy")
+        routing_meta["ollama_model"] = ollama_meta.get("model")
+        routing_meta["ollama_think"] = ollama_meta.get("think")
+        routing_meta["ollama_available"] = ollama_meta.get("available")
+        routing_meta["ollama_mode_bias"] = ollama_thought.get("mode_bias")
+        routing_meta["ollama_verify_first"] = ollama_thought.get("verify_first")
+        routing_meta["ollama_summary"] = ollama_thought.get("summary")
+
+        route_arbitration = arbitrate_route_candidates(
+            route_candidates,
+            fallback_route=str(effective_mode),
+        )
+
+        if route_arbitration.get("final_route"):
+            effective_mode = str(route_arbitration["final_route"])
+            routing_meta["effective_mode"] = effective_mode
+
+        routing_meta["arbitration_reason"] = route_arbitration.get("reason", "")
+        winner = route_arbitration.get("winner") or {}
+        routing_meta["arbitration_winner"] = str(winner.get("route", ""))
+        routing_meta["arbitration_candidate_count"] = int(route_arbitration.get("candidate_count", 0))
+
+        build_proactive_signals(
+            intent_focus=routing_meta.get("intent_focus"),
+            intent_routes=routing_meta.get("intent_preload_routes"),
+            intent_confidence=routing_meta.get("intent_confidence"),
+            intent_reason=routing_meta.get("intent_reason"),
+            bridge_reason=routing_meta.get("bridge_reason"),
+            bridge_route=routing_meta.get("bridge_recommended_route"),
+            bridge_score=routing_meta.get("bridge_score"),
+            whisper_kind=routing_meta.get("whisper_kind"),
+            whisper_priority=routing_meta.get("whisper_priority"),
+            whisper_message=routing_meta.get("whisper_message"),
+            whisper_reason=routing_meta.get("whisper_reason"),
+            whisper_verify_emphasis=routing_meta.get("whisper_verify_emphasis"),
+        )
+
+        return effective_mode, routing_meta, predictive_whispers, planner
+
+    async def _execute_repair(
+        self,
+        file_path: Path,
+        context: dict[str, Any],
+        request: dict,
+        effective_mode: str,
+        planner: dict,
+        predictive_whispers: list,
+    ) -> tuple[dict[str, Any], list[dict], list[dict]]:
+        before_hooks = self._dispatch_hook(
+            "before_repair",
+            {"file": str(file_path), "mode": effective_mode, "context": context},
+            {"socket": str(self.socket_path)},
+        )
+
+        if request.get("fast_path") == "hot_force" or effective_mode == "hot_force":
+            hot_ctx = {
+                "error_text": "Hot force signature request",
+                "traceback": [{"error_type": "HotForceSignature", "function": "hot_force"}],
+                "signature": request.get("signature"),
+            }
+            result = await self._run_hot_force(file_path, hot_ctx)
+            result["fallback_chain"] = ["hot_force"]
+        elif effective_mode == "fast_v2":
+            result = await self._run_fast_v2(file_path, context)
+            result["fallback_chain"] = ["fast_v2"]
+        else:
+            result = await self.fallback.repair(file_path, context, mode=effective_mode)
+
+        try:
+            result_syn = result.get("synaptic") or {}
+            record_predictive_repair_bridge(
+                target_path=str(file_path),
+                cwd=str(file_path.resolve().parent),
+                focus=str(planner.get("repo_type") or "general_runtime"),
+                signature=str(planner.get("signature") or request.get("signature") or result.get("signature") or "-"),
+                route=str(effective_mode or "-"),
+                success=bool(result.get("success", True)),
+                predictive_whispers=predictive_whispers,
+                synaptic_route=str(result_syn.get("route", "-")),
+                synaptic_prior=float(result_syn.get("prior", 0.0) or 0.0),
+                memory_matched=bool(result_syn.get("matched", False)),
+            )
+        except Exception:
+            pass
+
+        after_hooks = self._dispatch_hook(
+            "after_verify",
+            {"file": str(file_path), "mode": effective_mode, "result": result},
+            {"socket": str(self.socket_path)},
+        )
+
+        return result, before_hooks, after_hooks
+
+    def _post_process(
+        self,
+        result: dict[str, Any],
+        routing_meta: dict[str, Any],
+        context: dict[str, Any],
+        effective_mode: str,
+        agent_results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if not isinstance(result, dict) or "agent_results" not in result:
+            return result
+
+        result = self._apply_agent_postprocessing(result, result.get("agent_results", []))
+        result = self._apply_synaptic_metadata(result, agent_results)
+
+        synaptic_memory_update = self._remember_synaptic_result(
+            result=result,
+            context=context,
+            effective_mode=effective_mode,
+        )
+        if synaptic_memory_update is not None:
+            result["synaptic_memory_update"] = synaptic_memory_update
+
+        if routing_meta:
+            result.setdefault("routing", routing_meta)
+            if isinstance(result.get("synaptic"), dict):
+                result["routing"]["synaptic_used"] = bool(result["synaptic"].get("used", False))
+                result["routing"]["synaptic_prior"] = float(result["synaptic"].get("prior", 0.0) or 0.0)
+                result["routing"]["synaptic_seen_total"] = int(result["synaptic"].get("seen_total", 0) or 0)
+
+        return result
+
     async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         start = time.monotonic()
+        result = None
+        routing_meta: dict[str, Any] = {}
+        agent_results: list[dict[str, Any]] = []
+        context: dict[str, Any] = {}
+        effective_mode: str = ""
 
         try:
             data = await reader.read(65536)
-            request = json.loads(data.decode("utf-8"))
-
-            raw_file = request.get("file_path") or request.get("file")
-            if not raw_file:
-                raise ValueError("missing file_path/file")
-            file_path = Path(raw_file)
-
-            context = request.get("context") or {}
-            mode = str(request.get("mode") or "auto")
-            context = self._ensure_synaptic_context(file_path, context)
+            file_path, mode, context, request = self._parse_request(data)
 
             if not file_path.exists():
                 result = {
@@ -682,229 +936,12 @@ class TermOrganismDaemon:
                     context = self._build_context(file_path)
 
                 agent_results = await self._run_agent_plan(target=file_path, mode=mode, context=context)
-                effective_mode = mode
-                planner = next((x.get("output", {}) for x in agent_results if x.get("agent") == "planner"), {})
-                if mode == "auto":
-                    effective_mode = str(planner.get("suggested_mode") or "fast")
-                routing_meta = {
-                    "requested_mode": mode,
-                    "effective_mode": effective_mode,
-                    "planner_suggested_mode": str(planner.get("suggested_mode") or effective_mode),
-                    "planner_reason": planner.get("reason", ""),
-                }
-                mode = effective_mode
-                effective_mode, routing_meta = self._effective_mode_from_agents(mode, agent_results)
-                intent_ctx = infer_intent_context(detect_context(str(file_path.resolve().parent)))
-                intent_focus = str(intent_ctx.get("focus", "general_runtime"))
-                intent_preload_routes = list(intent_ctx.get("preload_routes", []))
-                intent_confidence = float(intent_ctx.get("confidence", 0.0) or 0.0)
-
-                routing_meta["intent_focus"] = intent_focus
-                routing_meta["intent_preload_routes"] = intent_preload_routes[:4]
-                routing_meta["intent_confidence"] = intent_confidence
-
-                intent_reason_parts = []
-
-                if effective_mode == "hot_force" and (
-                    "verify_first" in intent_preload_routes or "safe_preview" in intent_preload_routes
-                ):
-                    fallback_mode = str(planner.get("suggested_mode") or "fast_v2")
-                    if fallback_mode == "hot_force":
-                        fallback_mode = "fast_v2"
-                    effective_mode = fallback_mode
-                    routing_meta["effective_mode"] = effective_mode
-                    intent_reason_parts.append("intent-aware context avoided hot_force")
-
-                elif effective_mode == "fast" and "verify_first" in intent_preload_routes:
-                    effective_mode = "fast_v2"
-                    routing_meta["effective_mode"] = effective_mode
-                    intent_reason_parts.append("intent-aware context promoted fast_v2")
-
-                routing_meta["intent_reason"] = " | ".join(intent_reason_parts)
-
-                live_predictive = analyze_file(
-                    str(file_path),
-                    cwd=str(file_path.resolve().parent),
-                )
-                static_whispers = list((live_predictive or {}).get("warnings") or [])
-                runtime_whispers = derive_runtime_whispers(
-                    signature=str(planner.get("signature") or request.get("signature") or context.get("signature") or "-"),
-                    error_text=str(context.get("error_text") or ""),
-                )
-                predictive_whispers = merge_whispers(static_whispers, runtime_whispers)
-
-                bridge_bias = infer_bridge_route_bias(
-                    target_path=str(file_path),
-                    repo_root=str(file_path.resolve().parent),
-                    focus=str(planner.get("repo_type") or "general_runtime"),
-                    signature=str(planner.get("signature") or request.get("signature") or "-"),
-                )
-                bridge_apply = apply_bridge_bias_to_mode(
-                    requested_mode=(routing_meta.get("planner_suggested_mode") or effective_mode or mode),
-                    bridge_bias=bridge_bias,
-                )
-                if bridge_apply.get("effective_mode"):
-                    effective_mode = bridge_apply["effective_mode"]
-                    routing_meta["effective_mode"] = effective_mode
-                routing_meta["bridge_reason"] = bridge_apply.get("reason", "")
-                routing_meta["bridge_recommended_route"] = bridge_apply.get("recommended_route")
-                routing_meta["bridge_score"] = bridge_apply.get("score", 0.0)
-
-                whisper_apply = apply_live_whisper_bias(
-                    requested_mode=effective_mode,
-                    whispers=predictive_whispers,
-                )
-                if whisper_apply.get("effective_mode"):
-                    effective_mode = whisper_apply["effective_mode"]
-                    routing_meta["effective_mode"] = effective_mode
-                routing_meta["whisper_kind"] = whisper_apply.get("kind")
-                routing_meta["whisper_priority"] = whisper_apply.get("priority", 0.0)
-                routing_meta["whisper_message"] = whisper_apply.get("message", "")
-                routing_meta["whisper_reason"] = whisper_apply.get("reason", "")
-                routing_meta["whisper_verify_emphasis"] = whisper_apply.get("verify_emphasis", False)
-
-                routing_meta["planner_reason"] = enrich_planner_reason(
-                    routing_meta.get("planner_reason", ""),
-                    intent_reason=routing_meta.get("intent_reason", ""),
-                    bridge_reason=routing_meta.get("bridge_reason", ""),
-                    whisper_reason=routing_meta.get("whisper_reason", ""),
+                effective_mode, routing_meta, predictive_whispers, planner = self._build_routing_context(
+                    file_path, context, request, agent_results, mode,
                 )
 
-                route_candidates = build_route_candidates(
-                    planner=planner,
-                    current_effective_mode=str(effective_mode),
-                    bridge_apply=bridge_apply,
-                    whisper_apply=whisper_apply,
-                    intent_ctx=intent_ctx,
-                )
-                ollama_bias = apply_ollama_route_bias(
-                    route_candidates,
-                    task_kind="route_decision",
-                    context={
-                        "signature": str(request.get("signature") or context.get("signature") or ""),
-                        "planner_suggested_mode": str(planner.get("suggested_mode") or effective_mode),
-                        "intent_focus": str(intent_ctx.get("focus") or "general_runtime"),
-                        "intent_preload_routes": list(intent_ctx.get("preload_routes") or []),
-                        "bridge_recommended_route": str(bridge_apply.get("recommended_route") or ""),
-                        "bridge_score": float(bridge_apply.get("score", 0.0) or 0.0),
-                        "whisper_kind": str(whisper_apply.get("kind") or ""),
-                        "whisper_priority": float(whisper_apply.get("priority", 0.0) or 0.0),
-                    },
-                    complexity=0.8 if str(planner.get("suggested_mode") or "") in {"hot_force", "fast"} else 0.6,
-                )
-                route_candidates = list(ollama_bias.get("candidates") or route_candidates)
-                ollama_thought = dict(ollama_bias.get("thought") or {})
-                ollama_meta = dict(ollama_thought.get("_ollama") or {})
-                routing_meta["ollama_policy"] = ollama_meta.get("policy")
-                routing_meta["ollama_model"] = ollama_meta.get("model")
-                routing_meta["ollama_think"] = ollama_meta.get("think")
-                routing_meta["ollama_available"] = ollama_meta.get("available")
-                routing_meta["ollama_mode_bias"] = ollama_thought.get("mode_bias")
-                routing_meta["ollama_verify_first"] = ollama_thought.get("verify_first")
-                routing_meta["ollama_summary"] = ollama_thought.get("summary")
-
-                route_arbitration = arbitrate_route_candidates(
-                    route_candidates,
-                    fallback_route=str(effective_mode),
-                )
-
-                if route_arbitration.get("final_route"):
-                    effective_mode = str(route_arbitration["final_route"])
-                    routing_meta["effective_mode"] = effective_mode
-
-                routing_meta["arbitration_reason"] = route_arbitration.get("reason", "")
-                winner = route_arbitration.get("winner") or {}
-                routing_meta["arbitration_winner"] = str(winner.get("route", ""))
-                routing_meta["arbitration_candidate_count"] = int(route_arbitration.get("candidate_count", 0))
-
-                proactive_signals = build_proactive_signals(
-                    intent_focus=routing_meta.get("intent_focus"),
-                    intent_routes=routing_meta.get("intent_preload_routes"),
-                    intent_confidence=routing_meta.get("intent_confidence"),
-                    intent_reason=routing_meta.get("intent_reason"),
-                    bridge_reason=routing_meta.get("bridge_reason"),
-                    bridge_route=routing_meta.get("bridge_recommended_route"),
-                    bridge_score=routing_meta.get("bridge_score"),
-                    whisper_kind=routing_meta.get("whisper_kind"),
-                    whisper_priority=routing_meta.get("whisper_priority"),
-                    whisper_message=routing_meta.get("whisper_message"),
-                    whisper_reason=routing_meta.get("whisper_reason"),
-                    whisper_verify_emphasis=routing_meta.get("whisper_verify_emphasis"),
-                )
-
-                route_score_breakdown = {
-                    "planner_mode": str(planner.get("suggested_mode") or effective_mode),
-                    "final_mode": str(effective_mode),
-                    "intent_confidence": float(routing_meta.get("intent_confidence", 0.0) or 0.0),
-                    "bridge_score": float(routing_meta.get("bridge_score", 0.0) or 0.0),
-                    "whisper_priority": float(routing_meta.get("whisper_priority", 0.0) or 0.0),
-                    "whisper_verify_emphasis": bool(routing_meta.get("whisper_verify_emphasis", False)),
-                }
-
-                routing_meta["planner_reason"] = enrich_planner_reason(
-                    routing_meta.get("planner_reason", ""),
-                    intent_reason=routing_meta.get("intent_reason", ""),
-                    bridge_reason=routing_meta.get("bridge_reason", ""),
-                    whisper_reason=routing_meta.get("whisper_reason", ""),
-                )
-
-                proactive_signals = build_proactive_signals(
-                    intent_focus=routing_meta.get("intent_focus"),
-                    intent_routes=routing_meta.get("intent_preload_routes"),
-                    intent_confidence=routing_meta.get("intent_confidence"),
-                    intent_reason=routing_meta.get("intent_reason"),
-                    bridge_reason=routing_meta.get("bridge_reason"),
-                    bridge_route=routing_meta.get("bridge_recommended_route"),
-                    bridge_score=routing_meta.get("bridge_score"),
-                    whisper_kind=routing_meta.get("whisper_kind"),
-                    whisper_priority=routing_meta.get("whisper_priority"),
-                    whisper_message=routing_meta.get("whisper_message"),
-                    whisper_reason=routing_meta.get("whisper_reason"),
-                    whisper_verify_emphasis=routing_meta.get("whisper_verify_emphasis"),
-                )
-
-                before_hooks = self._dispatch_hook(
-
-                    "before_repair",
-                    {"file": str(file_path), "mode": effective_mode, "context": context},
-                    {"socket": str(self.socket_path)},
-                )
-
-                if request.get("fast_path") == "hot_force" or effective_mode == "hot_force":
-                    hot_ctx = {
-                        "error_text": "Hot force signature request",
-                        "traceback": [{"error_type": "HotForceSignature", "function": "hot_force"}],
-                        "signature": request.get("signature"),
-                    }
-                    result = await self._run_hot_force(file_path, hot_ctx)
-                    result["fallback_chain"] = ["hot_force"]
-                elif effective_mode == "fast_v2":
-                    result = await self._run_fast_v2(file_path, context)
-                    result["fallback_chain"] = ["fast_v2"]
-                else:
-                    result = await self.fallback.repair(file_path, context, mode=effective_mode)
-
-                try:
-                    result_syn = result.get("synaptic") or {}
-                    record_predictive_repair_bridge(
-                        target_path=str(file_path),
-                        cwd=str(file_path.resolve().parent),
-                        focus=str(planner.get("repo_type") or "general_runtime"),
-                        signature=str(planner.get("signature") or request.get("signature") or result.get("signature") or "-"),
-                        route=str(effective_mode or "-"),
-                        success=bool(result.get("success", True)),
-                        predictive_whispers=predictive_whispers,
-                        synaptic_route=str(result_syn.get("route", "-")),
-                        synaptic_prior=float(result_syn.get("prior", 0.0) or 0.0),
-                        memory_matched=bool(result_syn.get("matched", False)),
-                    )
-                except Exception:
-                    pass
-
-                after_hooks = self._dispatch_hook(
-                    "after_verify",
-                    {"file": str(file_path), "mode": effective_mode, "result": result},
-                    {"socket": str(self.socket_path)},
+                result, before_hooks, after_hooks = await self._execute_repair(
+                    file_path, context, request, effective_mode, planner, predictive_whispers,
                 )
 
                 result = self._attach_common_metadata(
@@ -921,23 +958,8 @@ class TermOrganismDaemon:
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
-        if isinstance(result, dict) and "agent_results" in result:
-            result = self._apply_agent_postprocessing(result, result.get("agent_results", []))
-            result = self._apply_synaptic_metadata(result, agent_results)
-            synaptic_memory_update = self._remember_synaptic_result(
-                result=result,
-                context=context,
-                effective_mode=effective_mode,
-            )
-            if synaptic_memory_update is not None:
-                result["synaptic_memory_update"] = synaptic_memory_update
+        result = self._post_process(result, routing_meta, context, effective_mode, agent_results)
 
-            if "routing_meta" in locals():
-                result.setdefault("routing", routing_meta)
-                if isinstance(result.get("synaptic"), dict):
-                    result["routing"]["synaptic_used"] = bool(result["synaptic"].get("used", False))
-                    result["routing"]["synaptic_prior"] = float(result["synaptic"].get("prior", 0.0) or 0.0)
-                    result["routing"]["synaptic_seen_total"] = int(result["synaptic"].get("seen_total", 0) or 0)
         elapsed = (time.monotonic() - start) * 1000.0
         if isinstance(result, dict):
             result.setdefault("daemon", {})
