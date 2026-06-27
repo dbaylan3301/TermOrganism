@@ -14,14 +14,7 @@ import argparse
 import asyncio
 import ast
 import json
-from core.daemon.json_safe import to_json_safe
-
-_json_dumps_original = json.dumps
-
-def _json_dumps_safe(obj, *args, **kwargs):
-    return _json_dumps_original(to_json_safe(obj), *args, **kwargs)
-
-json.dumps = _json_dumps_safe
+from core.daemon.json_safe import safe_json_dumps
 
 import re
 import shutil
@@ -948,7 +941,7 @@ class TermOrganismDaemon:
             result["daemon"]["socket"] = str(self.socket_path)
             result["daemon"]["request_ms"] = round(elapsed, 3)
 
-        writer.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+        writer.write(safe_json_dumps(result, ensure_ascii=False).encode("utf-8"))
         await writer.drain()
         writer.close()
         await writer.wait_closed()

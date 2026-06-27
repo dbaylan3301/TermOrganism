@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
+
+
+def safe_json_dumps(obj: Any, *args: Any, **kwargs: Any) -> str:
+    return json.dumps(to_json_safe(obj), *args, **kwargs)
 
 
 def to_json_safe(obj: Any) -> Any:
