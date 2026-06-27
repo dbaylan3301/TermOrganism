@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.util.logging import get_logger, setup_logging
+
 from core.autofix import run_autofix, finalize_repair_payload
 from core.modes.fast_v2_minimal import FastV2Minimal
 from core.orchestrator_fallback import FallbackOrchestrator
@@ -60,6 +62,7 @@ class TermOrganismDaemon:
     """
 
     def __init__(self, socket_path: Path = Path("/tmp/termorganism.sock")):
+        self.logger = get_logger("daemon")
         self.socket_path = socket_path
 
         self.hot_force = HotCacheForcePath()
@@ -99,13 +102,13 @@ class TermOrganismDaemon:
             for command in self.plugins.enabled_hook_commands(event_name):
                 self.hooks.register(event_name, command)
 
-        print("Daemon warmed up and ready", file=sys.stderr)
-        print(f"Loaded plugins: {[p['name'] for p in self.plugins.list_plugins()]}", file=sys.stderr)
-        print(f"Registered agents: {self.agents.names()}", file=sys.stderr)
-        print(
-            f"Registered hooks: before_repair={len(self.plugins.enabled_hook_commands('before_repair'))}, "
-            f"after_verify={len(self.plugins.enabled_hook_commands('after_verify'))}",
-            file=sys.stderr,
+        self.logger.info("Daemon warmed up and ready")
+        self.logger.info("Loaded plugins: %s", [p['name'] for p in self.plugins.list_plugins()])
+        self.logger.info("Registered agents: %s", self.agents.names())
+        self.logger.info(
+            "Registered hooks: before_repair=%d, after_verify=%d",
+            len(self.plugins.enabled_hook_commands('before_repair')),
+            len(self.plugins.enabled_hook_commands('after_verify')),
         )
     async def _ensure_workspace_pool(self):
         if self._workspace_pool_ready:
@@ -946,7 +949,7 @@ class TermOrganismDaemon:
         writer.close()
         await writer.wait_closed()
 
-        print(f"Request handled in {elapsed:.2f}ms", file=sys.stderr)
+        self.logger.info("Request handled in %.2fms", elapsed)
 
     async def start(self):
         if self.socket_path.exists():
@@ -957,7 +960,7 @@ class TermOrganismDaemon:
             str(self.socket_path),
         )
 
-        print(f"Daemon listening on {self.socket_path}", file=sys.stderr)
+        self.logger.info("Daemon listening on %s", self.socket_path)
 
         async with server:
             await server.serve_forever()
@@ -968,6 +971,7 @@ def main():
     parser.add_argument("--socket", default="/tmp/termorganism.sock")
     args = parser.parse_args()
 
+    setup_logging()
     daemon = TermOrganismDaemon(socket_path=Path(args.socket))
     asyncio.run(daemon.start())
 

@@ -8,6 +8,7 @@ from typing import Any
 
 from core.project.graph import build_project_graph
 from core.causal.analyzer import analyze_failure_causes
+from core.util.logging import get_logger
 
 from .utils import build_semantic_prelude
 from .candidates import build_candidates
@@ -15,6 +16,8 @@ from .planner import build_and_rank_plans
 from .verify import verify_repair
 from .hot_cache import apply_hot_cache_to_payload
 from .events import emit_thought, EventStoreAdapter
+
+logger = get_logger("repair.engine")
 
 
 def _ms(start: float, end: float) -> float:
@@ -65,6 +68,7 @@ def repair(
     thought_bus: Any = None,
 ) -> dict[str, Any]:
     t0 = perf_counter()
+    logger.info("Repair started for %s (fast=%s)", file_path, fast)
 
     emit_thought(
         thought_bus,
@@ -146,6 +150,7 @@ def repair(
             ((best_plan.get("edits") or [{}])[0].get("file"))
             or best_plan.get("target_file")
         )
+        logger.info("Best plan selected: strategy=%s target=%s", strategy, target)
         emit_thought(
             thought_bus,
             "Final Selection",
@@ -155,6 +160,7 @@ def repair(
             file_path=target,
         )
     else:
+        logger.warning("No best plan selected for %s", file_path)
         emit_thought(
             thought_bus,
             "Final Selection",
@@ -202,5 +208,7 @@ def repair(
         f"elapsed_ms={elapsed_ms} ok={payload['ok']}",
         kind="success" if payload["ok"] else "warn",
     )
+
+    logger.info("Repair completed in %.2fms ok=%s", elapsed_ms, payload["ok"])
 
     return payload

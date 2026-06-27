@@ -6,6 +6,9 @@ import yaml
 from .base import Plugin
 from core.experts.base import RepairExpert
 from core.mimo.tools import Tool
+from core.util.logging import get_logger
+
+logger = get_logger("plugins.registry")
 
 class PluginRegistry:
     def __init__(self) -> None:
@@ -36,15 +39,15 @@ class PluginRegistry:
         for plugin in self._plugins.values():
             try:
                 plugin.on_repair_start(context)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Plugin %s.on_repair_start failed: %s", plugin.name, exc)
 
     def notify_repair_complete(self, result: dict[str, Any]) -> None:
         for plugin in self._plugins.values():
             try:
                 plugin.on_repair_complete(result)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Plugin %s.on_repair_complete failed: %s", plugin.name, exc)
 
 
 def load_plugins_from_config(config_path: str | None = None) -> PluginRegistry:
@@ -69,13 +72,14 @@ def load_plugins_from_config(config_path: str | None = None) -> PluginRegistry:
                     plugin_cls = getattr(mod, "Plugin", None)
                     if plugin_cls and issubclass(plugin_cls, Plugin):
                         registry.register(plugin_cls())
-                except Exception:
+                except Exception as exc:
+                    logger.warning("Failed to load plugin %s: %s", module_path, exc)
                     continue
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to load plugin config %s: %s", config_path, exc)
     try:
         from core.plugins.builtin.python_hotfix import PythonHotfixPlugin
         registry.register(PythonHotfixPlugin())
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to load builtin plugin PythonHotfixPlugin: %s", exc)
     return registry
