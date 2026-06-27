@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import ast
 import json
+import os
 from core.daemon.json_safe import safe_json_dumps
 
 import re
@@ -913,6 +914,8 @@ class TermOrganismDaemon:
 
         return result
 
+    MAX_REQUEST_SIZE = 1_048_576
+
     async def handle_request(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         start = time.monotonic()
         result = None
@@ -922,7 +925,18 @@ class TermOrganismDaemon:
         effective_mode: str = ""
 
         try:
-            data = await reader.read(65536)
+            data = await reader.read(self.MAX_REQUEST_SIZE + 1)
+            if len(data) > self.MAX_REQUEST_SIZE:
+                result = {
+                    "success": False,
+                    "mode": "daemon",
+                    "error": f"request too large: {len(data)} bytes (max {self.MAX_REQUEST_SIZE})",
+                }
+                writer.write(safe_json_dumps(result, ensure_ascii=False).encode("utf-8"))
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
             file_path, mode, context, request = self._parse_request(data)
 
             if not file_path.exists():
@@ -981,6 +995,8 @@ class TermOrganismDaemon:
             self.handle_request,
             str(self.socket_path),
         )
+
+        os.chmod(str(self.socket_path), 0o600)
 
         self.logger.info("Daemon listening on %s", self.socket_path)
 
