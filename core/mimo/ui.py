@@ -21,16 +21,8 @@ else:
     console = None
 
 
-MIMO_COLORS = {
-    "primary": "rgb(147,51,234)",
-    "secondary": "rgb(168,85,247)",
-    "accent": "rgb(192,132,252)",
-    "text": "rgb(243,244,246)",
-    "muted": "rgb(156,163,175)",
-    "success": "rgb(34,197,94)",
-    "error": "rgb(239,68,68)",
-    "warning": "rgb(234,179,8)",
-}
+from core.ui.theme import COLORS as MIMO_COLORS
+MIMO_COLORS["error"] = MIMO_COLORS["danger"]
 
 
 def print_banner() -> None:
@@ -110,7 +102,7 @@ async def print_question(question: str, options: list[dict[str, Any]] | None = N
                 print(f"  {i}. {opt['label']}: {opt.get('description', '')}")
         return input("Your answer: ")
 
-    console.print(Panel(question, border_style=MIMO_COLORS["primary"], title="Soru"))
+    console.print(Panel(question, border_style=MIMO_COLORS["accent"], title="Soru"))
 
     if options:
         for i, opt in enumerate(options, 1):

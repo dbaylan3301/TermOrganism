@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 from rich import box
+from core.ui.theme import COLORS, STYLE, PANEL_BOX
 
 from core.llm.mimo_brain import _run_mimo
 from core.ui.animations import (
@@ -45,9 +46,9 @@ def _render_response(content: str):
     console.print()
     console.print(Panel(
         content,
-        title="[bold blue]TermOrganism[/bold blue]",
-        border_style="blue",
-        box=box.ROUNDED,
+        title=f"[{STYLE['primary']}]TermOrganism[/{STYLE['primary']}]",
+        border_style=COLORS["primary"],
+        box=PANEL_BOX,
         width=min(console.width, 80),
         padding=(0, 1),
     ))
@@ -59,22 +60,22 @@ async def repl_entry(session_id: str = "termorganism") -> int:
 
     console.print()
     console.print(Panel(
-        "[bold bright_cyan]TermOrganism[/bold bright_cyan]\n"
-        "[dim]Yapay zeka destekli professional code assistant[/dim]\n"
-        "[dim]Powered by MiMo · v0.1.1[/dim]",
-        border_style="bright_cyan",
+        f"[{STYLE['primary']}]TermOrganism[/{STYLE['primary']}]\\n"
+        f"[{STYLE['muted']}]Yapay zeka destekli professional code assistant[/{STYLE['muted']}]\\n"
+        f"[{STYLE['muted']}]Powered by MiMo · v0.2.0[/{STYLE['muted']}]",
+        border_style=COLORS["primary"],
         box=box.DOUBLE,
         width=50,
     ))
     console.print()
-    console.print("[dim]Yaz ve devam et. Çıkmak için: exit / quit[/dim]")
+    console.print(f"[{STYLE['muted']}]Yaz ve devam et. Çıkmak için: exit / quit[/{STYLE['muted']}]")
     console.print()
 
     history: list[dict[str, str]] = []
 
     while True:
         try:
-            message = console.input("[bold bright_cyan]chat>[/bold bright_cyan] ").strip()
+            message = console.input(f"[{STYLE['primary']}]chat>[/{STYLE['primary']}] ").strip()
         except (EOFError, KeyboardInterrupt):
             console.print()
             console.print("[dim]Hoşça kal![/dim]")
@@ -103,15 +104,15 @@ async def repl_entry(session_id: str = "termorganism") -> int:
 
         if message.lower() == "/history":
             if not history:
-                console.print("[dim]Henüz mesaj yok[/dim]")
+                console.print(f"[{STYLE['muted']}]Henüz mesaj yok[/{STYLE['muted']}]")
             else:
                 for h in history[-8:]:
                     role = h["role"]
                     content = h["content"][:70]
                     if role == "user":
-                        console.print(f"  [bold bright_cyan]sen:[/bold bright_cyan] {content}")
+                        console.print(f"  [{STYLE['primary']}]sen:[/{STYLE['primary']}] {content}")
                     else:
-                        console.print(f"  [bold bright_magenta]to:[/bold bright_magenta] {content}")
+                        console.print(f"  [{STYLE['accent']}]to:[/{STYLE['accent']}] {content}")
             console.print()
             continue
 

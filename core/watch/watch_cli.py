@@ -9,6 +9,7 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
+    from core.ui.theme import COLORS, STYLE, PANEL_BOX
     HAVE_RICH = True
 except Exception:
     HAVE_RICH = False
@@ -22,8 +23,8 @@ def _render(report: dict, *, changed: list[str] | None = None) -> None:
         return
 
     summary = Table(show_header=False, expand=True)
-    summary.add_column("k", style="grey62", width=18)
-    summary.add_column("v", style="white")
+    summary.add_column("k", style=STYLE["muted"], width=18)
+    summary.add_column("v", style=STYLE["text"])
     summary.add_row("repo_root", str(report.get("repo_root", "-")))
     summary.add_row("focus", str(report.get("focus", "-")))
     summary.add_row("preload_routes", ", ".join(report.get("preload_routes", [])[:4]) or "-")
@@ -38,7 +39,7 @@ def _render(report: dict, *, changed: list[str] | None = None) -> None:
     if changed is not None:
         summary.add_row("changed", ", ".join(changed[:4]) or "-")
 
-    console.print(Panel(summary, title="termorganism-watch", border_style="blue"))
+    console.print(Panel(summary, title=f"[{STYLE['primary']}]termorganism-watch[/{STYLE['primary']}]...", border_style=COLORS["primary"], box=PANEL_BOX))
 
     files = report.get("files_with_signals") or []
     if not files:
@@ -48,13 +49,13 @@ def _render(report: dict, *, changed: list[str] | None = None) -> None:
             body += f"\nSessiz dosyalar: {', '.join(quiet[:4])}"
             if len(quiet) > 4:
                 body += f" ... (+{len(quiet)-4})"
-        console.print(Panel(body, title="Predictive Summary", border_style="yellow"))
+        console.print(Panel(body, title=f"[{STYLE['accent']}]Predictive Summary[/{STYLE['accent']}]", border_style=COLORS["accent"], box=PANEL_BOX))
         return
 
     for item in files:
         rows = Table(show_header=False, expand=True)
-        rows.add_column("k", style="grey62", width=14)
-        rows.add_column("v", style="white")
+        rows.add_column("k", style=STYLE["muted"], width=14)
+        rows.add_column("v", style=STYLE["text"])
         rows.add_row("file", str(item.get("file", "-")))
         warnings = item.get("warnings") or []
         for idx, w in enumerate(warnings, start=1):
@@ -63,7 +64,7 @@ def _render(report: dict, *, changed: list[str] | None = None) -> None:
                 f"{w.get('kind')}: {w.get('message')} | p={w.get('priority', '-')} | seen={w.get('history_total', 0)} | 24h={w.get('recent_24h', 0)}"
             )
             rows.add_row(f"whisper_{idx}", str(w.get("whisper", "-")))
-        console.print(Panel(rows, title="Predictive Signals", border_style="magenta"))
+        console.print(Panel(rows, title=f"[{STYLE['secondary']}]Predictive Signals[/{STYLE['secondary']}]", border_style=COLORS["secondary"], box=PANEL_BOX))
 
 
 def main() -> int:
@@ -81,7 +82,7 @@ def main() -> int:
 
     previous = snapshot_targets(args.paths, modified_only=args.modified)
     if HAVE_RICH:
-        console.print(Panel("Watch mode aktif. Sadece dosya değişince konuşacağım.", border_style="green"))
+        console.print(Panel(f"[{STYLE['success']}]Watch mode aktif. Sadece dosya değişince konuşacağım.[/{STYLE['success']}]...", border_style=COLORS["success"], box=PANEL_BOX))
 
     try:
         while True:

@@ -9,21 +9,22 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from core.ui.theme import COLORS, STYLE
 
 console = Console()
 
 
 class PrettyTheme:
-    title = "bold magenta"
-    dim = "grey62"
-    ok = "bold green"
-    err = "bold red"
-    accent = "bright_cyan"
-    info = "bright_blue"
-    panel = "rgb(110,90,180)"
-    memory = "rgb(210,175,120)"
-    warm = "rgb(156,191,130)"
-    danger = "rgb(215,106,106)"
+    title = STYLE["primary"]
+    dim = STYLE["muted"]
+    ok = STYLE["success"]
+    err = STYLE["danger"]
+    accent = STYLE["accent"]
+    info = STYLE["info"]
+    panel = COLORS["panel"]
+    memory = COLORS["memory"]
+    warm = COLORS["success"]
+    danger = COLORS["danger"]
 
 
 def _status_style(success: bool) -> str:

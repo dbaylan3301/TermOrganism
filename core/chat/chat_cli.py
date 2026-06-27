@@ -8,6 +8,7 @@ except Exception:
 
 
 import asyncio
+import os
 
 import argparse
 
@@ -23,7 +24,29 @@ from .pause_layer import evaluate_reflective_pause
 from core.context.intent_context import infer_intent_context
 from core.watch.predictive_engine import predictive_whispers_for_target, record_predictive_repair_bridge, predictive_bridge_summary
 from core.context.bridge_bias import choose_bridge_bias
-from core.ui.animations import run_with_thinking, phases_for_goal
+from core.ui.animations import run_with_thinking, phases_for_goal, typewriter_effect
+from rich.console import Console
+from core.ui.theme import COLORS, STYLE
+
+
+async def _render_with_typewriter(response: dict) -> None:
+    console = Console()
+    answer = str(response.get("answer", "")).strip()
+    if not answer:
+        return
+
+    intent = str(response.get("intent", "-"))
+    confidence = response.get("confidence", "-")
+    ok = bool(response.get("ok"))
+
+    console.print()
+    status = f"[{STYLE['success']}]SUCCESS[/{STYLE['success']}]" if ok else f"[{STYLE['danger']}]FAILED[/{STYLE['danger']}]"
+    console.print(f"[{STYLE['primary']}]TermOrganism[/{STYLE['primary']}] Chat  {status}")
+    console.print(f"[{STYLE['accent']}]intent={intent}[/{STYLE['accent']}]  [{STYLE['info']}]confidence={confidence}[/{STYLE['info']}]")
+    console.print()
+
+    await typewriter_effect(answer, console_=console, char_delay=0.02, cursor_char="█")
+    console.print()
 
 
 async def process_message_async(message: str, *, session_id: str = "default") -> int:
@@ -82,6 +105,16 @@ async def process_message_async(message: str, *, session_id: str = "default") ->
     response["predictive_whispers"] = predictive_whispers
     response["bridge_bias"] = bridge_bias
 
+    from core.llm.mimo_brain import generate_natural_response
+    natural = generate_natural_response(
+        user_message=message,
+        context={"intent": intent.goal},
+        intent=intent.goal,
+        data=response,
+    )
+    if natural:
+        response["answer"] = natural
+
     repair_obj = response.get("repair") or {}
     repair_result = repair_obj.get("result") if isinstance(repair_obj, dict) else None
     if isinstance(repair_result, dict):
@@ -127,18 +160,22 @@ async def process_message_async(message: str, *, session_id: str = "default") ->
     if thinking_items:
         play_thinking_stream(thinking_items[:3])
 
-    render_response(response)
+    if os.getenv("TERMORGANISM_CHAT_TYPEWRITER", "0").strip().lower() in {"1", "true", "yes", "on"}:
+        await _render_with_typewriter(response)
+    else:
+        render_response(response)
     return 0 if response.get("ok") else 1
 
 
 async def repl_async(session_id: str = "default") -> int:
-    print("TermOrganism Chat")
-    print("Yaz ve devam et. Çıkmak için: exit / quit")
+    console = Console()
+    console.print(f"[{STYLE['primary']}]TermOrganism[/{STYLE['primary']}] Chat")
+    console.print(f"[{STYLE['muted']}]Yaz ve devam et. Çıkmak için: exit / quit[/{STYLE['muted']}]")
     while True:
         try:
-            message = input("chat> ").strip()
+            message = console.input(f"[{STYLE['primary']}]chat>[/{STYLE['primary']}] ").strip()
         except (EOFError, KeyboardInterrupt):
-            print()
+            console.print()
             return 0
         if not message:
             continue
