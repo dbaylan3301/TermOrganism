@@ -170,7 +170,7 @@ async def process_message_async(message: str, *, session_id: str = "default") ->
 async def repl_async(session_id: str = "default") -> int:
     console = Console()
     console.print(f"[{STYLE['primary']}]TermOrganism[/{STYLE['primary']}] Chat")
-    console.print(f"[{STYLE['muted']}]Yaz ve devam et. Çıkmak için: exit / quit[/{STYLE['muted']}]")
+    console.print(f"[{STYLE['muted']}]Trading, kod onarımı, analiz... Çıkmak için: exit / quit[/{STYLE['muted']}]")
     while True:
         try:
             message = console.input(f"[{STYLE['primary']}]chat>[/{STYLE['primary']}] ").strip()

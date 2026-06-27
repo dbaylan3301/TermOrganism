@@ -55,14 +55,93 @@ def _render_response(content: str):
     console.print()
 
 
+def _run_trading(message: str) -> str:
+    """Run scalpbot analysis."""
+    try:
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, "-m", "plugins.scalpbot", "scan"],
+            capture_output=True, text=True, timeout=120,
+            cwd=str(Path(__file__).resolve().parents[2])
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+        elif result.stderr:
+            return f"Hata: {result.stderr[:500]}"
+        else:
+            return "Trading analizi tamamlandı ancak sinyal bulunamadı."
+    except subprocess.TimeoutExpired:
+        return "Trading analizi zaman aşımına uğradı (120s)."
+    except Exception as e:
+        return f"Trading hatası: {e}"
+
+
+def _run_doctor() -> str:
+    """Run system health check."""
+    try:
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, "-m", "core.cli.autofix_cli", "doctor"],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(Path(__file__).resolve().parents[2])
+        )
+        output = result.stdout or result.stderr
+        return output[:2000] if output else "Doctor çalıştırılamadı."
+    except Exception as e:
+        return f"Doctor hatası: {e}"
+
+
+def _run_watch() -> str:
+    """Run predictive watch analysis."""
+    try:
+        from core.watch.predictive_engine import analyze_targets
+        report = analyze_targets(["."])
+        files = report.get("files_with_signals") or []
+        if not files:
+            return "Tahmini sinyal bulunamadı. Her şey normal görünüyor."
+        lines = ["Tahmini Sinyaller:"]
+        for f in files[:5]:
+            lines.append(f"  • {f.get('file', '?')}: {len(f.get('warnings', []))} uyarı")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Watch hatası: {e}"
+
+
+def _show_help() -> str:
+    """Show available commands."""
+    return """Komutlar ve Yetenekler:
+
+  [bold]Trading/Kripto:[/bold]
+    trading, sinyal, tara, scalp    → Kripto piyasası tarama
+    analiz [coin]                   → Tek coin analizi
+
+  [bold]Kod Onarımı:[/bold]
+    [dosya_yolu]                    → Dosyayı analiz et
+    onar, fix, tamir                → Kod onarımı
+
+  [bold]Sistem:[/bold]
+    doctor, sağlık, kontrol         → Sistem sağlık kontrolü
+    watch, izle, tahmin             → Tahmini analiz
+
+  [bold]Proje:[/bold]
+    repo özeti, proje hakkında      → Proje bilgisi
+    repo durumu, git status         → Değişiklikler
+
+  [bold]Diğer:[/bold]
+    help, yardım                    → Bu ekran
+    clear                           → Ekranı temizle
+    exit, quit                      → Çık"""
+
+
 async def repl_entry(session_id: str = "termorganism") -> int:
     os.system("clear" if os.name != "nt" else "cls")
 
     console.print()
     console.print(Panel(
         f"[{STYLE['primary']}]TermOrganism[/{STYLE['primary']}]\\n"
-        f"[{STYLE['muted']}]Yapay zeka destekli professional code assistant[/{STYLE['muted']}]\\n"
-        f"[{STYLE['muted']}]Powered by MiMo · v0.2.0[/{STYLE['muted']}]",
+        f"[{STYLE['muted']}]Yapay zeka destekli professional code assistant[/{STYLE['muted']}]",
         border_style=COLORS["primary"],
         box=box.DOUBLE,
         width=50,
@@ -120,16 +199,46 @@ async def repl_entry(session_id: str = "termorganism") -> int:
 
         file_path = _extract_file_path(message)
         file_content = _read_file(file_path) if file_path else None
+        msg_lower = message.lower()
 
+        # Intent detection
         intent = "general"
         if file_content:
             intent = "repair"
-        elif any(w in message.lower() for w in ["merhaba", "selam", "hey"]):
+        elif any(w in msg_lower for w in ["merhaba", "selam", "hey", "nasılsın"]):
             intent = "greeting"
-        elif any(w in message.lower() for w in ["repo özeti", "proje ne", "bu ne"]):
+        elif any(w in msg_lower for w in ["repo özeti", "proje ne", "bu ne", "proje hakkında"]):
             intent = "repo_summary"
-        elif any(w in message.lower() for w in ["repo durumu", "git status"]):
+        elif any(w in msg_lower for w in ["repo durumu", "git status", "değişiklikler"]):
             intent = "repo_status"
+        elif any(w in msg_lower for w in ["trading", "sinyal", "tara", "analiz", "scalp", "kripto", "coin", "long", "short"]):
+            intent = "trading"
+        elif any(w in msg_lower for w in ["doctor", "sağlık", "kontrol", "test", "testler"]):
+            intent = "doctor"
+        elif any(w in msg_lower for w in ["watch", "izle", "tahmin", "predict"]):
+            intent = "watch"
+        elif any(w in msg_lower for w in ["onar", "fix", "tamir", "hata", "bug", "error"]):
+            intent = "repair"
+        elif any(w in msg_lower for w in ["yardım", "help", "ne yapabilirsin", "komutlar"]):
+            intent = "help"
+
+        # Direct action handlers
+        if intent == "trading":
+            _render_response(_run_trading(message))
+            history.append({"role": "assistant", "content": "Trading analizi başlatıldı."})
+            continue
+        elif intent == "doctor":
+            _render_response(_run_doctor())
+            history.append({"role": "assistant", "content": "Sistem kontrolü tamamlandı."})
+            continue
+        elif intent == "watch":
+            _render_response(_run_watch())
+            history.append({"role": "assistant", "content": "Watch modu başlatıldı."})
+            continue
+        elif intent == "help":
+            _render_response(_show_help())
+            history.append({"role": "assistant", "content": "Yardım gösterildi."})
+            continue
 
         phases = phases_for_goal(intent)
 

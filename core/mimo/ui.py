@@ -40,9 +40,9 @@ def print_banner() -> None:
     banner.append("Merhaba! Ben TermOrganism.", style=MIMO_COLORS["text"])
     banner.append("              │\n", style=MIMO_COLORS["primary"])
     banner.append("  │ ", style=MIMO_COLORS["primary"])
-    banner.append("Projen hakkında nasıl yardımcı          │\n", style=MIMO_COLORS["text"])
+    banner.append("Trading, kod onarımı, analiz...       │\n", style=MIMO_COLORS["text"])
     banner.append("  │ ", style=MIMO_COLORS["primary"])
-    banner.append("olabilirim?                             │\n", style=MIMO_COLORS["text"])
+    banner.append("Nasıl yardımcı olabilirim?             │\n", style=MIMO_COLORS["text"])
     banner.append("  ╰─────────────────────────────────────────╯", style=MIMO_COLORS["primary"])
 
     console.print(banner)
