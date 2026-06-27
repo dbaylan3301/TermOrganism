@@ -6,6 +6,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from .base import BaseLLMProvider, LLMMessage, LLMResponse
+from .retry import retry_with_backoff
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -23,7 +24,7 @@ class OpenAIProvider(BaseLLMProvider):
     def name(self) -> str:
         return f"openai/{self._model}"
 
-    async def chat(
+    async def _chat_impl(
         self,
         messages: list[LLMMessage],
         tools: list[dict[str, Any]] | None = None,
@@ -66,6 +67,17 @@ class OpenAIProvider(BaseLLMProvider):
             tool_calls=tool_calls,
             usage=data.get("usage", {}),
             model=data.get("model", self._model),
+        )
+
+    async def chat(
+        self,
+        messages: list[LLMMessage],
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 16384,
+    ) -> LLMResponse:
+        return await retry_with_backoff(
+            self._chat_impl, messages, tools, temperature, max_tokens
         )
 
     async def chat_stream(
