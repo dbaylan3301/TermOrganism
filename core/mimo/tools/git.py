@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 from typing import Any
 
@@ -31,10 +32,10 @@ class GitTool(Tool):
 
     async def execute(self, command: str = "", workdir: str | None = None,
                       **kwargs: Any) -> str:
-        cmd = f"git {command}"
+        cmd_list = ["git"] + shlex.split(command)
         try:
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True,
+                cmd_list, capture_output=True, text=True,
                 timeout=30, cwd=workdir or "."
             )
             out = result.stdout.strip()
