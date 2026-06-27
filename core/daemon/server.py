@@ -27,7 +27,7 @@ from typing import Any
 
 from core.util.logging import get_logger, setup_logging
 
-from core.autofix import run_autofix, finalize_repair_payload
+from core.autofix import run_autofix
 from core.modes.fast_v2_minimal import FastV2Minimal
 from core.orchestrator_fallback import FallbackOrchestrator
 from core.orchestrator_hot_force import HotCacheForcePath
@@ -639,7 +639,6 @@ class TermOrganismDaemon:
             file_path=str(file_path),
             fast=(mode == "fast"),
         )
-        result = finalize_repair_payload(result, fast=(mode == "fast"))
         result = self._sync_hot_cache_confidence(result)
         return result
 

@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from core.autofix import run_autofix, finalize_repair_payload
+from core.autofix import run_autofix
 from core.salvage.orchestrator import run_salvage
 from core.ui.thoughts import AsyncThoughtBus, build_thought_sink
 
@@ -456,8 +456,6 @@ def _run_repair(target: str, args: argparse.Namespace) -> int:
     finally:
         if bus is not None:
             bus.close()
-    result = finalize_repair_payload(result, fast=_fast_requested(args))
-
     if isinstance(result, dict):
         behavioral = result.get("behavioral_verify")
         if result.get("sandbox") is None and isinstance(behavioral, dict):

@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -96,10 +97,10 @@ def stop_watch() -> int:
         return 0
 
     if not _is_running(pid):
-        with contextlib_suppress():
-            _pid_file().unlink()
-        print(f"STALE_CLEANED\npid={pid}")
-        return 0
+    with suppress(OSError):
+        _pid_file().unlink()
+    print(f"STALE_CLEANED\npid={pid}")
+    return 0
 
     try:
         os.kill(pid, signal.SIGTERM)
@@ -107,18 +108,11 @@ def stop_watch() -> int:
         print(f"STOP_FAILED\npid={pid}\nerror={e}")
         return 1
 
-    with contextlib_suppress():
+    with suppress(OSError):
         _pid_file().unlink()
 
     print(f"STOPPED\npid={pid}")
     return 0
-
-
-class contextlib_suppress:
-    def __enter__(self):
-        return self
-    def __exit__(self, exc_type, exc, tb):
-        return True
 
 
 def main() -> int:

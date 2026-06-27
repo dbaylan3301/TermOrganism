@@ -20,10 +20,6 @@ from core.repair import (
 run_autofix = repair
 
 
-def finalize_repair_payload(result: dict, *, fast: bool = False) -> dict:
-    return result
-
-
 __all__ = [
     "repair",
     "run_autofix",
