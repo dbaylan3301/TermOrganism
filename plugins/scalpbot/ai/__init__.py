@@ -1,3 +1,6 @@
 """AI Brain modules for ScalpBot."""
-from .brain import MetaBrain
-__all__ = ["MetaBrain"]
+try:
+    from .brain import MetaBrain
+    __all__ = ["MetaBrain"]
+except ImportError:
+    __all__ = []
