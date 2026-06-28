@@ -19,6 +19,8 @@ from core.ui.animations import (
     phases_for_goal,
 )
 from core.repair.auto_fix import scan_project, format_scan_results
+from core.analysis.security import scan_file_security, format_security_results
+from core.analysis.dependencies import analyze_python_deps, analyze_node_deps, format_dependency_report
 
 
 console = Console()
@@ -232,6 +234,10 @@ async def repl_entry(session_id: str = "termorganism") -> int:
             intent = "repair"
         elif any(w in msg_lower for w in ["yardım", "help", "ne yapabilirsin", "komutlar"]):
             intent = "help"
+        elif any(w in msg_lower for w in ["güvenlik", "security", "siber", "güvenlik tara"]):
+            intent = "security"
+        elif any(w in msg_lower for w in ["bağlantılar", "dependencies", "paketler", "bağlantı raporu"]):
+            intent = "dependencies"
 
         # Direct action handlers
         if intent == "trading":
@@ -286,6 +292,21 @@ async def repl_entry(session_id: str = "termorganism") -> int:
         elif intent == "help":
             _render_response(_show_help())
             history.append({"role": "assistant", "content": "Yardım gösterildi."})
+            continue
+        elif intent == "security":
+            # Scan current directory
+            all_issues = []
+            for py_file in Path(".").rglob("*.py"):
+                if "venv" not in str(py_file):
+                    all_issues.extend(scan_file_security(str(py_file)))
+            _render_response(format_security_results(all_issues))
+            history.append({"role": "assistant", "content": "Güvenlik taraması tamamlandı."})
+            continue
+        elif intent == "dependencies":
+            python_deps = analyze_python_deps(".")
+            node_deps = analyze_node_deps(".")
+            _render_response(format_dependency_report(python_deps, node_deps))
+            history.append({"role": "assistant", "content": "Bağlantı raporu gösterildi."})
             continue
 
         phases = phases_for_goal(intent)
