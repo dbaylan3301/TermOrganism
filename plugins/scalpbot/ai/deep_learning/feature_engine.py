@@ -105,10 +105,15 @@ class FeatureEngine:
         features = [1.0 if p in patterns else 0.0 for p in pattern_list]
         return np.array(features)
     
-    def extract_temporal_features(self, timestamp: float) -> np.ndarray:
+    def extract_temporal_features(self, timestamp) -> np.ndarray:
         """Extract time-based features."""
         import datetime
-        dt = datetime.datetime.fromtimestamp(timestamp)
+        if hasattr(timestamp, 'to_pydatetime'):
+            dt = timestamp.to_pydatetime()
+        elif isinstance(timestamp, (int, float)):
+            dt = datetime.datetime.fromtimestamp(timestamp)
+        else:
+            dt = datetime.datetime.now()
         
         features = [
             dt.hour / 24.0,  # Hour of day
