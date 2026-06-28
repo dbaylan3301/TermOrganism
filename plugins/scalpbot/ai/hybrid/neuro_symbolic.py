@@ -130,6 +130,9 @@ class NeuroSymbolicTrader(nn.Module):
         """
         Make final hybrid decision.
         """
+        # Set to eval mode to avoid BatchNorm issues
+        self.eval()
+        
         with torch.no_grad():
             fused_action, confidence = self.forward(market_data, indicators)
 

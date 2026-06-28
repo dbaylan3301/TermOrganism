@@ -57,20 +57,13 @@ def get_confidence_bar(confidence: float) -> str:
     return f"[{color}]{'█' * filled}{'░' * (bar_length - filled)}[/{color}]"
 
 def display_banner():
-    banner = """
-[bold #00D4AA]╔══════════════════════════════════════════════════════════════╗
-║                                                              ║
-║   ███╗   ███╗ ██████╗ ██████╗  ██████╗ ██╗   ██╗████████╗   ║
-║   ████╗ ████║██╔═══██╗██╔══██╗██╔═══██╗██║   ██║╚══██╔══╝   ║
-║   ██╔████╔██║██║   ██║██║  ██║██║   ██║██║   ██║   ██║      ║
-║   ██║╚██╔╝██║██║   ██║██║  ██║██║   ██║██║   ██║   ██║      ║
-║   ██║ ╚═╝ ██║╚██████╔╝██████╔╝╚██████╔╝╚██████╔╝   ██║      ║
-║   ╚═╝     ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝  ╚═════╝    ╚═╝      ║
-║                                                              ║
-║          [bold #7C3AED]5x SCALP BOT[/bold #7C3AED] • Crypto Futures Signal Engine           ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝[/bold #00D4AA]"""
-    console.print(Align.center(banner))
+    console.print(Panel(
+        "[bold #00D4AA]⚡ 5x SCALP BOT[/bold #00D4AA]\n"
+        "[#6B7280]Neuro-Symbolic AI • Crypto Futures Signal Engine[/#6B7280]",
+        border_style="#00D4AA",
+        box=box.ROUNDED,
+        padding=(0, 2)
+    ))
 
 def display_scanning_header():
     console.print()
