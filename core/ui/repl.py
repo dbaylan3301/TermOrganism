@@ -18,6 +18,7 @@ from core.ui.animations import (
     run_with_thinking,
     phases_for_goal,
 )
+from core.repair.auto_fix import scan_project, format_scan_results
 
 
 console = Console()
@@ -217,6 +218,8 @@ async def repl_entry(session_id: str = "termorganism") -> int:
             intent = "repo_status"
         elif any(w in msg_lower for w in ["trading", "sinyal", "tara", "analiz", "scalp", "kripto", "coin", "long", "short"]):
             intent = "trading"
+        elif any(w in msg_lower for w in ["scan", "hata bul", "sorun bul"]):
+            intent = "scan"
         elif any(w in msg_lower for w in ["doctor", "sağlık", "kontrol", "test", "testler"]):
             intent = "doctor"
         elif any(w in msg_lower for w in ["watch", "izle", "tahmin", "predict"]):
@@ -266,6 +269,19 @@ async def repl_entry(session_id: str = "termorganism") -> int:
             else:
                 _render_response("Bu komut sadece Next.js projeleri için çalışır.")
             history.append({"role": "assistant", "content": "Dev server komutu çalıştırıldı."})
+            continue
+        elif intent == "scan":
+            results = scan_project(".")
+            _render_response(format_scan_results(results))
+            history.append({"role": "assistant", "content": "Proje taraması tamamlandı."})
+            continue
+        elif intent == "repair":
+            results = scan_project(".")
+            if results["issues"]:
+                _render_response(f"🔍 {len(results['issues'])} sorun bulundu.\n\nOtomatik onarım henüz geliştirme aşamasında.\nManuel düzeltme için sorunlu dosyaları belirtebilirsiniz.")
+            else:
+                _render_response("✅ Herhangi bir sorun bulunamadı!")
+            history.append({"role": "assistant", "content": "Onarım kontrolü tamamlandı."})
             continue
         elif intent == "help":
             _render_response(_show_help())
