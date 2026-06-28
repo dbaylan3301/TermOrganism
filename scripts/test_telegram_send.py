@@ -7,7 +7,7 @@ from core.integrations.telegram import TelegramNotifier
 async def test_send():
     """Send test message to Telegram channel."""
     BOT_TOKEN = "8346013289:AAHLbunkU_lSUTDDCcoVsOKbJxZ39TeMGXc"
-    CHANNEL_ID = "-100825111862"
+    CHANNEL_ID = "-1003561214306"
     
     notifier = TelegramNotifier(BOT_TOKEN, CHANNEL_ID)
     

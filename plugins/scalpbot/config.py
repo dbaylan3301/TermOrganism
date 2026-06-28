@@ -52,7 +52,7 @@ class ScalpConfig:
     # Telegram
     telegram_enabled: bool = True
     telegram_bot_token: str = "8346013289:AAHLbunkU_lSUTDDCcoVsOKbJxZ39TeMGXc"
-    telegram_channel_id: str = "-100825111862"
+    telegram_channel_id: str = "-1003561214306"
     telegram_min_confidence: float = 85.0
 
     @classmethod
