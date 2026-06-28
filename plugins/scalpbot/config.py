@@ -34,16 +34,26 @@ class ScalpConfig:
     min_confidence: float = 80.0  # Minimum %80 güvenilirlik
     min_score: int = 85  # Minimum sinyal skoru
 
+    # Data
+    min_data_length: int = 50
+
     # Scanner
     kline_interval: str = "1m"
     kline_limit: int = 250  # Daha fazla veri
     scan_interval_sec: int = 60
     top_pairs: int = 50
+    max_signals_per_scan: int = 5
     price_refresh_sec: int = 1
 
     # Signal confirmation
     signal_cooldown_sec: int = 180  # 3 dakika cooldown
     confidence_diff_for_new_coin: float = 15.0  # Farklı coin için %15 fark
+
+    # Telegram
+    telegram_enabled: bool = True
+    telegram_bot_token: str = "8346013289:AAHLbunkU_lSUTDDCcoVsOKbJxZ39TeMGXc"
+    telegram_channel_id: str = "-100825111862"
+    telegram_min_confidence: float = 85.0
 
     @classmethod
     def from_dict(cls, d: dict) -> "ScalpConfig":
