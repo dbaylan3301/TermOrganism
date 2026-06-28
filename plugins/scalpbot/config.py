@@ -59,6 +59,15 @@ class ScalpConfig:
     telegram_channel_id: str = "-1003561214306"
     telegram_min_confidence: float = 85.0
 
+    # AI Brain
+    ai_enabled: bool = True
+    ai_confidence_threshold: float = 0.7
+    ai_use_lstm: bool = True
+    ai_use_transformer: bool = True
+    ai_use_rl: bool = True
+    ai_use_sentiment: bool = True
+    ai_train_episodes: int = 100
+
     @classmethod
     def from_dict(cls, d: dict) -> "ScalpConfig":
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
