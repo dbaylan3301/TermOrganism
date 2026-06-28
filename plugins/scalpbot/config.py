@@ -23,16 +23,20 @@ class ScalpConfig:
     # Trigger
     trigger_bps: float = 12.0
 
-    # Risk - İyileştirilmiş SL/TP
+    # Risk - Sertleştirilmiş SL/TP
     leverage: int = 5
-    sl_atr_mult: float = 1.4   # Daha geniş SL (5x için)
-    tp_atr_mult: float = 2.4   # Daha geniş TP (1:1.7+ hedef)
-    min_risk_reward: float = 1.65  # Minimum R/R oranı
+    sl_atr_mult: float = 0.9   # ATR * 0.9 (daha dar SL, hızlı çıkış)
+    tp_atr_mult: float = 2.0   # ATR * 2.0 (1:2.2+ RR hedefi)
+    min_risk_reward: float = 2.0  # Minimum 1:2 RR
+    min_sl_distance_pct: float = 0.15  # Minimum %0.15 SL mesafesi
+    min_tp_distance_pct: float = 0.30  # Minimum %0.30 TP mesafesi
 
-    # Signal requirements
-    min_conditions: int = 5  # TÜM koşullar sağlanmalı (EMA+RSI+ATR+Volume+Trigger)
-    min_confidence: float = 80.0  # Minimum %80 güvenilirlik
-    min_score: int = 85  # Minimum sinyal skoru
+    # Signal requirements - Sertleştirilmiş
+    min_conditions: int = 6  # TÜM koşullar zorunlu (EMA+RSI+ATR+Volume+Trigger+Candle)
+    min_confidence: float = 85.0  # Minimum %85 güvenilirlik
+    min_score: int = 90  # Minimum sinyal skoru
+    require_momentum: bool = True  # Momentum trigger zorunlu
+    require_volume: bool = True  # Volume spike zorunlu
 
     # Data
     min_data_length: int = 50
