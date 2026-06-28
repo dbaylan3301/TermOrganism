@@ -21,6 +21,12 @@ try:
 except ImportError:
     send_signal_notification = None
 
+try:
+    from plugins.scalpbot.ai.brain import MetaBrain
+    AI_BRAIN_AVAILABLE = True
+except ImportError:
+    AI_BRAIN_AVAILABLE = False
+
 ALL_COINS = [
     "BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA", "AVAX", "DOT", "LINK",
     "LTC", "ATOM", "NEAR", "FIL", "ETC", "BCH", "XLM", "VET", "HBAR", "ICP",
@@ -48,6 +54,9 @@ class CoinScanner:
         self.last_signal: Optional[SignalResult] = None
         self.last_signal_time = 0
         self.signal_history: List[Dict] = []
+
+        self.brain = MetaBrain() if AI_BRAIN_AVAILABLE else None
+        self.use_ai_brain = True
 
     def fetch_usdt_pairs(self) -> List[str]:
         """Config'e göre coin listesi döndür"""
@@ -205,6 +214,50 @@ class CoinScanner:
             
             if result.signal != "NONE" and result.confidence >= self.config.min_confidence:
                 signals.append(result)
+
+        if self.brain and self.use_ai_brain and not signals:
+            for coin in screened[:3]:
+                symbol = coin["symbol"]
+                df = self.kline_cache[symbol]
+
+                indicators = {
+                    'rsi': np.array([coin.get('rsi', 50)] * 50),
+                    'macd': np.zeros(50),
+                    'macd_signal': np.zeros(50),
+                    'bb_upper': np.full(50, df['close'].max()),
+                    'bb_lower': np.full(50, df['close'].min()),
+                    'atr': np.full(50, coin.get('atr_pct', 0.01) * df['close'].mean())
+                }
+
+                brain_output = self.brain.predict(
+                    df, indicators, coin.get('patterns', [])
+                )
+
+                if brain_output.direction != "NEUTRAL" and brain_output.confidence > 0.7:
+                    from .risk import RiskManager
+
+                    current_price = float(df['close'].values[-1])
+                    risk_manager = RiskManager(leverage=self.config.leverage)
+
+                    atr_val = indicators['atr'][-1]
+                    sl, tp = risk_manager.calculate_sl_tp(
+                        current_price, atr_val, brain_output.direction,
+                        self.config.sl_atr_mult, self.config.tp_atr_mult
+                    )
+
+                    ai_signal = SignalResult(
+                        signal=brain_output.direction,
+                        symbol=symbol,
+                        entry_price=current_price,
+                        sl_price=sl,
+                        tp_price=tp,
+                        leverage=self.config.leverage,
+                        confidence=brain_output.confidence * 100,
+                        confidence_level="YAPAY ZEKA"
+                    )
+
+                    signals.append(ai_signal)
+                    console.print(f"[#7C3AED]🧠 AI Brain sinyal üretti: {symbol} {brain_output.direction}[/#7C3AED]")
 
         # En iyi sinyali seç + confirmation
         if signals:
