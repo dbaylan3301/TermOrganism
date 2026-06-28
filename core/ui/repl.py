@@ -10,6 +10,7 @@ from rich.panel import Panel
 from rich import box
 from core.ui.theme import COLORS, STYLE, PANEL_BOX
 
+from core.commands.enhanced import get_repo_summary, get_repo_status
 from core.llm.mimo_brain import _run_mimo
 from core.ui.animations import (
     ThinkingPhase,
@@ -234,6 +235,14 @@ async def repl_entry(session_id: str = "termorganism") -> int:
         elif intent == "watch":
             _render_response(_run_watch())
             history.append({"role": "assistant", "content": "Watch modu başlatıldı."})
+            continue
+        elif intent == "repo_summary":
+            _render_response(get_repo_summary())
+            history.append({"role": "assistant", "content": "Repo özeti gösterildi."})
+            continue
+        elif intent == "repo_status":
+            _render_response(get_repo_status())
+            history.append({"role": "assistant", "content": "Repo durumu gösterildi."})
             continue
         elif intent == "help":
             _render_response(_show_help())
