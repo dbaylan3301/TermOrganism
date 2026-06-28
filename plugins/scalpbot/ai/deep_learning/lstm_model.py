@@ -45,23 +45,25 @@ class LSTMPredictor:
         if self.torch is None:
             return
         
-        class LSTMModel(self.nn.Module):
+        import torch.nn as nn
+        
+        class LSTMModel(nn.Module):
             def __init__(self, input_size, hidden_size, num_layers, dropout):
                 super().__init__()
-                self.lstm = self.nn.LSTM(
+                self.lstm = nn.LSTM(
                     input_size=input_size,
                     hidden_size=hidden_size,
                     num_layers=num_layers,
                     dropout=dropout,
                     batch_first=True
                 )
-                self.fc = self.nn.Sequential(
-                    self.nn.Linear(hidden_size, 64),
-                    self.nn.ReLU(),
-                    self.nn.Dropout(dropout),
-                    self.nn.Linear(64, 32),
-                    self.nn.ReLU(),
-                    self.nn.Linear(32, 3)  # [LONG, SHORT, NEUTRAL]
+                self.fc = nn.Sequential(
+                    nn.Linear(hidden_size, 64),
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                    nn.Linear(64, 32),
+                    nn.ReLU(),
+                    nn.Linear(32, 3)  # [LONG, SHORT, NEUTRAL]
                 )
             
             def forward(self, x):

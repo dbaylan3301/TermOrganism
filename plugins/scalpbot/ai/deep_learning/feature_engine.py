@@ -71,25 +71,37 @@ class FeatureEngine:
         # RSI
         if 'rsi' in indicators:
             rsi = indicators['rsi']
-            features.extend([rsi[-1], rsi[-5:].mean()])
+            if isinstance(rsi, np.ndarray) and len(rsi) > 0:
+                features.extend([rsi[-1], rsi[-5:].mean() if len(rsi) >= 5 else rsi[-1]])
+            else:
+                features.extend([float(rsi), float(rsi)])
         
         # MACD
         if 'macd' in indicators and 'macd_signal' in indicators:
             macd = indicators['macd']
             signal = indicators['macd_signal']
-            features.extend([macd[-1], signal[-1], macd[-1] - signal[-1]])
+            if isinstance(macd, np.ndarray) and len(macd) > 0:
+                features.extend([macd[-1], signal[-1], macd[-1] - signal[-1]])
+            else:
+                features.extend([float(macd), float(signal), float(macd) - float(signal)])
         
         # Bollinger Bands
         if 'bb_upper' in indicators and 'bb_lower' in indicators:
             upper = indicators['bb_upper']
             lower = indicators['bb_lower']
-            bb_position = (upper[-1] - lower[-1]) / (upper[-1] + lower[-1] + 1e-10)
+            if isinstance(upper, np.ndarray) and len(upper) > 0:
+                bb_position = (upper[-1] - lower[-1]) / (upper[-1] + lower[-1] + 1e-10)
+            else:
+                bb_position = (float(upper) - float(lower)) / (float(upper) + float(lower) + 1e-10)
             features.append(bb_position)
         
         # ATR
         if 'atr' in indicators:
             atr = indicators['atr']
-            features.append(atr[-1])
+            if isinstance(atr, np.ndarray) and len(atr) > 0:
+                features.append(atr[-1])
+            else:
+                features.append(float(atr))
         
         return np.array(features)
     
