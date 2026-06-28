@@ -55,7 +55,9 @@ class FeatureEngine:
         features.append(vol_changes[-self.lookback:])
         
         # Volume momentum
-        vol_momentum = volumes[-5:].mean() / volumes[-20:-5].mean()
+        recent_vol = volumes[-5:].mean()
+        base_vol = volumes[-20:-5].mean()
+        vol_momentum = recent_vol / (base_vol + 1e-10)
         features.append([vol_momentum])
         
         # Volume volatility

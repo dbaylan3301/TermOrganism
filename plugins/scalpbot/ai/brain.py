@@ -178,7 +178,14 @@ class MetaBrain:
         hybrid_decision = None
         try:
             hybrid_input = torch.FloatTensor(features.price_features[:32]).unsqueeze(0).unsqueeze(0)
-            hybrid_decision = self.hybrid_model.make_decision(hybrid_input, indicators)
+            # Ensure indicators are scalar values for rule engine
+            clean_indicators = {}
+            for k, v in indicators.items():
+                if isinstance(v, (list, np.ndarray)):
+                    clean_indicators[k] = float(v[-1]) if len(v) > 0 else 0.0
+                else:
+                    clean_indicators[k] = v
+            hybrid_decision = self.hybrid_model.make_decision(hybrid_input, clean_indicators)
             
             self.monitor.record_decision({
                 "action": hybrid_decision.action,
@@ -190,7 +197,7 @@ class MetaBrain:
                 symbol=str(df.index[-1]) if hasattr(df.index, '__getitem__') else "unknown",
                 action=hybrid_decision.action,
                 confidence=hybrid_decision.confidence,
-                indicators=indicators,
+                indicators=clean_indicators,
                 neural_output={"lstm": lstm_output, "transformer": transformer_output},
                 symbolic_output={"rules_triggered": len(hybrid_decision.explanation.split('\n'))}
             )

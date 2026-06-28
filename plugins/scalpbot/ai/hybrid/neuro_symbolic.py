@@ -3,6 +3,7 @@
 
 import torch
 import torch.nn as nn
+import numpy as np
 from typing import Dict, Tuple, Optional
 from dataclasses import dataclass
 
@@ -143,7 +144,22 @@ class NeuroSymbolicTrader(nn.Module):
             action = actions[action_idx]
 
             # Get symbolic decision for explanation
-            symbolic_decision = self.symbolic_engine.evaluate(indicators)
+            try:
+                # Convert any array values to scalars for rule engine
+                clean_indicators = {}
+                for k, v in indicators.items():
+                    if isinstance(v, (list, np.ndarray)):
+                        clean_indicators[k] = float(v[-1]) if len(v) > 0 else 0.0
+                    else:
+                        clean_indicators[k] = v
+                symbolic_decision = self.symbolic_engine.evaluate(clean_indicators)
+            except Exception:
+                # Fallback symbolic decision
+                from ..symbolic.rule_engine import SymbolicDecision, RuleResult
+                symbolic_decision = SymbolicDecision(
+                    action="HOLD", confidence=0.5, position_size_modifier=1.0,
+                    rules_triggered=[], explanation="Fallback", risk_level="MEDIUM"
+                )
 
             # Calculate position size
             position_size = symbolic_decision.position_size_modifier
