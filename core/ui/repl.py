@@ -11,6 +11,7 @@ from rich import box
 from core.ui.theme import COLORS, STYLE, PANEL_BOX
 
 from core.commands.enhanced import get_repo_summary, get_repo_status
+from core.integrations.openstock import detect_project_type, get_nextjs_info, run_nextjs_dev
 from core.llm.mimo_brain import _run_mimo
 from core.ui.animations import (
     ThinkingPhase,
@@ -129,6 +130,8 @@ def _show_help() -> str:
   [bold]Proje:[/bold]
     repo özeti, proje hakkında      → Proje bilgisi
     repo durumu, git status         → Değişiklikler
+    nextjs, react proje             → Next.js proje bilgisi
+    dev başlat, npm dev             → Dev sunucusu başlat
 
   [bold]Diğer:[/bold]
     help, yardım                    → Bu ekran
@@ -218,6 +221,10 @@ async def repl_entry(session_id: str = "termorganism") -> int:
             intent = "doctor"
         elif any(w in msg_lower for w in ["watch", "izle", "tahmin", "predict"]):
             intent = "watch"
+        elif any(w in msg_lower for w in ["nextjs", "next.js", "react proje", "ts proje"]):
+            intent = "project_info"
+        elif any(w in msg_lower for w in ["dev başlat", "sunucu başlat", "npm dev"]):
+            intent = "run_dev"
         elif any(w in msg_lower for w in ["onar", "fix", "tamir", "hata", "bug", "error"]):
             intent = "repair"
         elif any(w in msg_lower for w in ["yardım", "help", "ne yapabilirsin", "komutlar"]):
@@ -243,6 +250,22 @@ async def repl_entry(session_id: str = "termorganism") -> int:
         elif intent == "repo_status":
             _render_response(get_repo_status())
             history.append({"role": "assistant", "content": "Repo durumu gösterildi."})
+            continue
+        elif intent == "project_info":
+            project_type = detect_project_type()
+            if project_type == "nextjs":
+                _render_response(get_nextjs_info())
+            else:
+                _render_response(f"Proje tipi: {project_type or 'bilinmiyor'}")
+            history.append({"role": "assistant", "content": "Proje bilgisi gösterildi."})
+            continue
+        elif intent == "run_dev":
+            project_type = detect_project_type()
+            if project_type == "nextjs":
+                _render_response(run_nextjs_dev())
+            else:
+                _render_response("Bu komut sadece Next.js projeleri için çalışır.")
+            history.append({"role": "assistant", "content": "Dev server komutu çalıştırıldı."})
             continue
         elif intent == "help":
             _render_response(_show_help())
