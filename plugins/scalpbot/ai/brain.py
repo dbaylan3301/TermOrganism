@@ -1,6 +1,7 @@
 """MetaBrain - orchestrates all AI brains."""
 
 import numpy as np
+import torch
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import time
@@ -15,6 +16,13 @@ from .sentiment.news_analyzer import NewsAnalyzer
 from .sentiment.fear_greed import FearGreedIndex
 from .sentiment.social_aggregator import SocialAggregator
 from .ensemble.meta_learner import MetaLearner, MetaPrediction
+from .neural.scalp_brain import ScalpBrain
+from .hybrid.neuro_symbolic import NeuroSymbolicTrader
+from .symbolic.rule_engine import SymbolicRuleEngine
+from .symbolic.fuzzy_logic import FuzzyTradingSystem
+from .forge.ai_forge import AIForge
+from .forge.monitor import BrainMonitor
+from .forge.logger import DecisionLogger
 
 
 @dataclass
@@ -58,10 +66,21 @@ class MetaBrain:
         # Ensemble
         self.meta_learner = MetaLearner()
         
+        # Neuro-Symbolic
+        self.hybrid_model = NeuroSymbolicTrader(input_dim=32, hidden_dim=128)
+        self.symbolic_engine = SymbolicRuleEngine()
+        self.fuzzy_system = FuzzyTradingSystem()
+        
+        # AI Forge
+        self.forge = AIForge()
+        self.monitor = BrainMonitor()
+        self.logger = DecisionLogger()
+        
         # State
         self.is_initialized = False
         self.prediction_count = 0
         
+        self.forge.log("🚀 MetaBrain with Neuro-Symbolic AI initialized")
         print("MetaBrain initialized")
     
     def initialize_rl(self, data: np.ndarray):
@@ -85,7 +104,7 @@ class MetaBrain:
                 patterns: List[str], news: List[str] = None,
                 fear_greed_value: int = 50) -> BrainOutput:
         """
-        Make prediction using all brains.
+        Make prediction using all brains including Neuro-Symbolic hybrid.
         """
         start_time = time.time()
         
@@ -155,12 +174,39 @@ class MetaBrain:
         
         meta_prediction = self.meta_learner.predict(predictions)
         
+        # 6. Neuro-Symbolic Hybrid Decision
+        hybrid_decision = None
+        try:
+            hybrid_input = torch.FloatTensor(features.price_features[:32]).unsqueeze(0).unsqueeze(0)
+            hybrid_decision = self.hybrid_model.make_decision(hybrid_input, indicators)
+            
+            self.monitor.record_decision({
+                "action": hybrid_decision.action,
+                "confidence": hybrid_decision.confidence,
+                "risk_level": hybrid_decision.risk_level
+            })
+            
+            self.logger.log_signal(
+                symbol=str(df.index[-1]) if hasattr(df.index, '__getitem__') else "unknown",
+                action=hybrid_decision.action,
+                confidence=hybrid_decision.confidence,
+                indicators=indicators,
+                neural_output={"lstm": lstm_output, "transformer": transformer_output},
+                symbolic_output={"rules_triggered": len(hybrid_decision.explanation.split('\n'))}
+            )
+        except Exception as e:
+            self.forge.log(f"⚠️ Hybrid model error: {e}", "WARNING")
+        
         processing_time = time.time() - start_time
         self.prediction_count += 1
         
+        # Use hybrid decision as final direction if available
+        final_direction = hybrid_decision.action if hybrid_decision else meta_prediction.direction
+        final_confidence = hybrid_decision.confidence if hybrid_decision else meta_prediction.confidence
+        
         return BrainOutput(
-            direction=meta_prediction.direction,
-            confidence=meta_prediction.confidence,
+            direction=final_direction,
+            confidence=final_confidence,
             prediction=meta_prediction,
             lstm_output=lstm_output,
             transformer_output=transformer_output,
@@ -198,6 +244,11 @@ class MetaBrain:
                 "transformer": "active",
                 "q_learning": "active" if self.q_agent else "inactive",
                 "ppo": "active" if self.ppo_agent else "inactive",
-                "sentiment": "active"
-            }
+                "sentiment": "active",
+                "neuro_symbolic": "active",
+                "symbolic_engine": "active",
+                "fuzzy_system": "active",
+                "forge": "active"
+            },
+            "monitor": self.monitor.get_summary() if self.monitor else None
         }
