@@ -10,6 +10,7 @@ from core.chat.task_spec import TaskSpec
 
 from .session import ChatSessionState
 from core.context.semantic_scent import build_semantic_scent
+from core.llm.mimo_brain import generate_natural_response
 
 
 def _run(cmd: str, cwd: str | None = None, timeout: int = 90) -> dict:
@@ -237,6 +238,21 @@ def _maybe_scent(ctx, *, target_hint: str | None = None, signature: str | None =
         return None
 
 
+def _natural_answer(response: dict[str, Any], user_message: str = "") -> str:
+    try:
+        natural = generate_natural_response(
+            user_message=user_message,
+            context={"intent": response.get("intent", "")},
+            intent=response.get("intent", ""),
+            data=response,
+        )
+        if natural:
+            return natural
+    except Exception:
+        pass
+    return ""
+
+
 def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -> dict[str, Any]:
     goal = plan["goal"]
     response: dict[str, Any] = {
@@ -455,4 +471,9 @@ def execute_plan(intent, plan: dict[str, Any], ctx, session: ChatSessionState) -
         "Şimdilik desteklenen konuşmalı görevler: repo özeti, repo durumu, test çalıştırma, "
         "proje çalıştırma, dosya repair ve follow-up onay akışları."
     )
+
+    natural = _natural_answer(response, str(response.get("message", "")))
+    if natural:
+        response["answer"] = natural
+
     return response

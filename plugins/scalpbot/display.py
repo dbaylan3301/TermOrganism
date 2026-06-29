@@ -232,7 +232,7 @@ def display_signal(result: SignalResult, market_data: dict = None):
     
     # Calculate distances
     sl_dist = abs(result.entry_price - result.sl_price) / result.entry_price * 100
-    tp_dist = abs(result.tp_price - result.entry_price) / result.entry_price * 100
+    tp_dist = abs(result.tp3_price - result.entry_price) / result.entry_price * 100
 
     # Signal header with animation effect
     header = f"""[bold {color}]╔══════════════════════════════════════════════════════════════════════════════╗
@@ -246,7 +246,7 @@ def display_signal(result: SignalResult, market_data: dict = None):
 
   [bold #E2E8F0]Entry:[/bold #E2E8F0]     [bold {color}]{format_price(result.entry_price)}[/bold {color}]
   [bold #E2E8F0]Stop Loss:[/bold #E2E8F0]  [#FF3366]{format_price(result.sl_price)}[/#FF3366] [dim]({sl_dist:.2f}%)[/dim]
-  [bold #E2E8F0]Take Profit:[/bold #E2E8F0] [#00FF88]{format_price(result.tp_price)}[/#00FF88] [dim]({tp_dist:.2f}%)[/dim]
+  [bold #E2E8F0]Take Profit:[/bold #E2E8F0] [#00FF88]{format_price(result.tp3_price)}[/#00FF88] [dim]({tp_dist:.2f}%)[/dim]
   
   [bold #E2E8F0]Leverage:[/bold #E2E8F0]   [#F59E0B]{result.leverage}x[/#F59E0B]
   [bold #E2E8F0]R/R Ratio:[/bold #E2E8F0]  [bold #7C3AED]1:{result.risk_reward:.2f}[/bold #7C3AED]"""
@@ -315,7 +315,7 @@ def display_signal(result: SignalResult, market_data: dict = None):
   [dim]  --direction {result.signal}[/dim]
   [dim]  --entry {format_price(result.entry_price)}[/dim]
   [dim]  --sl {format_price(result.sl_price)}[/dim]
-  [dim]  --tp {format_price(result.tp_price)}[/dim]"""
+  [dim]  --tp {format_price(result.tp3_price)}[/dim]"""
 
     # Combine all sections
     full_content = f"""{price_section}

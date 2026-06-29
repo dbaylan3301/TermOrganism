@@ -14,6 +14,19 @@ from core.chat.repo_assessment import (
 )
 from core.chat.task_spec import TaskSpec
 from core.security.review import run_security_review, render_security_summary
+from core.llm.mimo_brain import generate_natural_response
+
+
+def _naturalize(answer: str, intent: str, message: str) -> str:
+    natural = generate_natural_response(
+        user_message=message,
+        context={"intent": intent},
+        intent=intent,
+        data={"answer": answer},
+    )
+    if natural:
+        return natural
+    return answer
 
 
 def _base_response(message: str, spec: TaskSpec, answer: str, *, root: str) -> dict[str, Any]:
@@ -112,45 +125,89 @@ def build_semantic_response(message: str, spec: TaskSpec, repo_root: str | None 
             )
         else:
             answer = "Belirgin temel eksik görünmüyor; bundan sonraki seviye kalite sertleştirme ve dokümantasyon derinliği."
+        answer = _naturalize(answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
+
+    if spec.intent_family == "repo_status":
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["git", "status", "--short", "-b"],
+                capture_output=True, text=True, timeout=10, cwd=root
+            )
+            if result.returncode == 0:
+                lines = [x for x in result.stdout.splitlines() if x.strip()]
+                if not lines:
+                    raw_answer = "Repo temiz, değişiklik yok."
+                else:
+                    branch = lines[0][3:] if lines[0].startswith("## ") else "-"
+                    modified = sum(1 for l in lines[1:] if "M " in l or l.startswith(" M"))
+                    untracked = sum(1 for l in lines[1:] if l.startswith("??"))
+                    raw_answer = f"Branch: {branch}\nDeğişiklik: {modified} dosya\nTakip edilmeyen: {untracked} dosya"
+            else:
+                raw_answer = "Git durumu alınamadı."
+        except Exception:
+            raw_answer = "Git durumu alınamadı."
+        answer = _naturalize(raw_answer, spec.intent_family, message)
         return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "repo_summary":
-        return _base_response(message, spec, repo_summary_text(scan), root=root)
+        raw_answer = repo_summary_text(scan)
+        answer = _naturalize(raw_answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "architecture_review":
-        return _base_response(message, spec, architecture_review_text(scan), root=root)
+        raw_answer = architecture_review_text(scan)
+        answer = _naturalize(raw_answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "weakness_analysis":
-        return _base_response(message, spec, weakness_analysis_text(scan), root=root)
+        raw_answer = weakness_analysis_text(scan)
+        answer = _naturalize(raw_answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "productization":
-        return _base_response(message, spec, productization_text(scan), root=root)
+        raw_answer = productization_text(scan)
+        answer = _naturalize(raw_answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "roadmap":
-        return _base_response(message, spec, roadmap_text(scan), root=root)
+        raw_answer = roadmap_text(scan)
+        answer = _naturalize(raw_answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "test_strategy":
-        return _base_response(message, spec, test_strategy_text(scan), root=root)
+        raw_answer = test_strategy_text(scan)
+        answer = _naturalize(raw_answer, spec.intent_family, message)
+        return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "help":
-        answer = (
-            "Bu soru özellik açıklaması gibi görünüyor. Semantic interpreter, önce kullanıcı niyetini normalize edip sonra uygun güvenli route'u seçmeyi hedefler. "
-            "Böylece sistem pattern ezberinden ziyade anlam ailesine göre davranmaya yaklaşır."
+        raw_answer = (
+            "Size nasıl yardımcı olabilirim? Repo özeti, test çalıştırma, "
+            "dosya onarma gibi birçok işlem yapabilirim."
         )
+        answer = _naturalize(raw_answer, spec.intent_family, message)
         return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "diagnose":
-        answer = (
-            "Bu soru karar mantığı teşhisi istiyor. Semantic katman açısından amaç, agresif uygulama yerine en stabil ve verify-first yolu seçmek; "
-            "bu yüzden intent, risk ve bağlam birlikte değerlendirilir."
+        raw_answer = (
+            "Sorunu teşhis ediyorum. En güvenli çözümü bulmaya çalışıyorum."
         )
+        answer = _naturalize(raw_answer, spec.intent_family, message)
         return _base_response(message, spec, answer, root=root)
 
     if spec.intent_family == "general_analysis":
-        answer = (
-            "Soruyu genel analiz olarak yorumladım. Semantic interpreter aktif, ama tüm serbest sorular için tam ürün seviyesi anlama henüz tamamlanmış değil. "
-            "Yine de niyeti en güvenli aileye oturtup kısa, uygulanabilir yanıt vermeye çalışıyorum."
-        )
+        answer = _naturalize("", spec.intent_family, message)
+        if not answer:
+            msg_lower = message.lower()
+            if "merhaba" in msg_lower or "selam" in msg_lower:
+                answer = "Merhaba! Ben TermOrganism. Size nasıl yardımcı olabilirim?"
+            elif "nasıl" in msg_lower and ("yap" in msg_lower or "ol" in msg_lower):
+                answer = "İsteğinizi anladım. En kısa yoldan çözmeye çalışıyorum."
+            elif "nedir" in msg_lower or "ne" in msg_lower:
+                answer = "Soruyu anladım. Kısa ve net bir açıklama yapacağım."
+            else:
+                answer = "Soruyu anladım. Size en kısa ve net yanıtı vermeye çalışacağım."
         return _base_response(message, spec, answer, root=root)
 
     return None

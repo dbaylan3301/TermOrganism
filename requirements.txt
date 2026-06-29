@@ -1,3 +1,34 @@
+# Core
 rich>=13.7.0
 httpx>=0.27.0
 pyyaml>=6.0
+
+# Data & Numerical
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Technical Analysis
+ta>=0.11.0
+
+# ML
+xgboost>=2.0.0
+lightgbm>=4.0.0
+scikit-learn>=1.3.0
+optuna>=3.4.0
+
+# Deep Learning (LSTM)
+torch>=2.0.0
+
+# Exchange
+ccxt>=4.0.0
+ccxt-pro>=1.0.0
+
+# Async & Web
+aiohttp>=3.9.0
+websockets>=12.0
+
+# Dashboard
+streamlit>=1.30.0
+
+# Utilities
+joblib>=1.3.0

@@ -409,6 +409,54 @@ class TermOrganismAnimator:
         self._stop.set()
 
 
+async def typewriter_effect(
+    text: str,
+    *,
+    console_: Console | None = None,
+    char_delay: float = 0.03,
+    cursor_char: str = "█",
+    style: str = "white",
+) -> None:
+    con = console_ or console
+    display_text = str(text or "")
+    if not display_text:
+        return
+
+    current = ""
+    for char in display_text:
+        current += char
+        con.print(f"\r{current}{cursor_char}", end="", highlight=False)
+        await asyncio.sleep(char_delay)
+
+    con.print(f"\r{current}", end="", highlight=False)
+    con.print()
+
+
+async def typewriter_lines(
+    text: str,
+    *,
+    console_: Console | None = None,
+    char_delay: float = 0.025,
+    line_delay: float = 0.15,
+    cursor_char: str = "█",
+    style: str = "white",
+) -> None:
+    con = console_ or console
+    lines = str(text or "").split("\n")
+    if not lines:
+        return
+
+    for line in lines:
+        current = ""
+        for char in line:
+            current += char
+            con.print(f"\r{current}{cursor_char}", end="", highlight=False)
+            await asyncio.sleep(char_delay)
+        con.print(f"\r{current}", end="", highlight=False)
+        con.print()
+        await asyncio.sleep(line_delay)
+
+
 async def run_with_thinking(
     coro,
     *,

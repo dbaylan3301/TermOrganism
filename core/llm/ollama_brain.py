@@ -145,6 +145,57 @@ def _normalize_parsed(parsed: dict[str, Any], *, policy: ThoughtPolicy) -> dict[
     return out
 
 
+def generate_natural_response(
+    *,
+    task_kind: str,
+    data: dict[str, Any],
+    user_message: str = "",
+    context: dict[str, Any] | None = None,
+) -> str:
+    context = context or {}
+    policy = select_policy(task_kind, 0.3)
+
+    if Client is None:
+        return ""
+
+    try:
+        client = Client(host=OLLAMA_HOST)
+    except Exception:
+        return ""
+
+    system = (
+        "Sen TermOrganism'in doğal dil yanıt üreteçisisin. "
+        "Verilen yapılandırılmış veriyi kullanarak doğal, samimi ve kısa Türkçe cümleler kur. "
+        "Teknik terimleri açıkla, uzun yazma. Maksimum 3-4 cümle yaz."
+    )
+
+    user_obj = {
+        "user_message": user_message,
+        "data": data,
+        "instruction": "Bu veriyi doğal bir Türkçe yanıt haline getir.",
+    }
+
+    try:
+        resp = client.chat(
+            model=policy.model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user_obj, ensure_ascii=False)},
+            ],
+            options={
+                "temperature": 0.4,
+                "num_predict": 200,
+            },
+        )
+        msg = _msg_content(resp)
+        if msg and len(msg.strip()) > 10:
+            return msg.strip()
+    except Exception:
+        pass
+
+    return ""
+
+
 def generate_thought(
     *,
     task_kind: str,

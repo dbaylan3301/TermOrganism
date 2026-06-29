@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict
 from .config import ScalpConfig
-from .indicators import calc_ema, calc_rsi, calc_atr, calc_volume_spike, check_crossover
-from .patterns import full_analysis, multi_timeframe_score
+from .indicators import TechnicalIndicators
+from .patterns import full_candle_analysis
 
 class MarketScreener:
     def __init__(self, config: ScalpConfig):
@@ -11,11 +11,12 @@ class MarketScreener:
 
     def calculate_indicators(self, closes: np.ndarray, highs: np.ndarray,
                             lows: np.ndarray, volumes: np.ndarray) -> Dict:
-        ema_fast = calc_ema(closes, 8)
-        ema_slow = calc_ema(closes, 13)
-        rsi = calc_rsi(closes, 14)
-        atr = calc_atr(highs, lows, closes, 7)
-        vol_spike, vol_ratio = calc_volume_spike(volumes)
+        ind = TechnicalIndicators()
+        ema_fast = ind.calc_ema(closes, 8)
+        ema_slow = ind.calc_ema(closes, 13)
+        rsi = ind.calc_rsi(closes, 14)
+        atr = ind.calc_atr(highs, lows, closes, 7)
+        vol_spike, vol_ratio = ind.calc_volume_spike(volumes)
 
         ema_diff = 0
         if not np.isnan(ema_fast[-1]) and not np.isnan(ema_slow[-1]) and ema_slow[-1] != 0:
@@ -43,7 +44,7 @@ class MarketScreener:
         volumes = data["volume"].values
 
         ind = self.calculate_indicators(closes, highs, lows, volumes)
-        patterns = full_analysis(opens, highs, lows, closes, volumes)
+        patterns = full_candle_analysis(opens, highs, lows, closes, volumes)
 
         score = 0
         reasons = []

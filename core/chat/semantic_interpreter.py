@@ -51,8 +51,14 @@ FAMILIES: list[tuple[str, list[str], str, str, bool]] = [
     ("repo_summary", [
         "repo ne yapıyor", "bu repo ne yapıyor", "proje ne yapıyor",
         "bu projeyi açıkla", "projeyi açıkla", "bu projeyi özetle", "projeyi özetle",
-        "bu kod tabanını açıkla", "kod tabanını açıkla", "repo özeti", "summary"
+        "bu kod tabanını açıkla", "kod tabanını açıkla", "repo özeti", "summary",
+        "bu proje ne", "projeyi tanıt", "projeyi anlat"
     ], "repo özeti ver", "read_only", False),
+
+    ("repo_status", [
+        "repo durumu", "git durumu", "değişiklikler", "current status",
+        "branch", "dal", "hangi dal", "ne değişti", "degisiklik"
+    ], "repo durumunu göster", "read_only", False),
 
     ("architecture_review", [
         "mimari", "architecture", "architectural", "tasarım", "design", "yapı nasıl", "mimariyi değerlendir"
